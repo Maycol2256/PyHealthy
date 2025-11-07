@@ -313,7 +313,7 @@ def iniciar_proceso():
     pyautogui.typewrite(nit)
     pyautogui.sleep(3)
     pyautogui.press("tab")
-    pyautogui.sleep(8)
+    pyautogui.sleep(14)
 
     if not buscar_y_click("numero_factura.png", "numero_factura"):
         messagebox.showwarning(
@@ -352,7 +352,7 @@ def iniciar_proceso():
         )
         return
 
-    pyautogui.sleep(6)
+    pyautogui.sleep(13)
 
     if not buscar_y_click("productos.png", "productos"):
         messagebox.showwarning(
@@ -363,19 +363,19 @@ def iniciar_proceso():
 
     pyautogui.sleep(6)
 
-    if not buscar_y_click("añadir.png", "añadir"):
+    if not buscar_y_click("anadir.png", "anadir"):
         messagebox.showwarning(
             "Advertencia",
-            "No se encontró el botón 'añadir.png'. Verifica que la página esté visible.",
+            "No se encontró el botón 'anadir.png'. Verifica que la página esté visible.",
         )
         return
 
     pyautogui.sleep(6)
 
-    if not buscar_y_click("añadir_producto.png", "añadir_producto"):
+    if not buscar_y_click("anadir_producto.png", "anadir_producto"):
         messagebox.showwarning(
             "Advertencia",
-            "No se encontró el botón 'añadir_producto.png'. Verifica que la página esté visible.",
+            "No se encontró el botón 'anadir_producto.png'. Verifica que la página esté visible.",
         )
         return
 
