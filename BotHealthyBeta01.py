@@ -180,10 +180,8 @@ def iniciar_proceso():
     )
 
     # Esperar carga completa de la página
-    time.sleep(18)
-
-    # 🔹 Ajuste específico: botón de unidad con menor confianza
-    if not buscar_y_click("unidad_select.png", "Selector de unidad", confianza=0.7):
+    time.sleep(20)
+    if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6):
         messagebox.showwarning(
             "Advertencia",
             "No se encontró el botón 'unidad_select.png'. Verifica que la página esté visible.",
@@ -201,8 +199,12 @@ def iniciar_proceso():
 
     # Aplicar filtro
     time.sleep(5)
-    buscar_y_click("aplicar_filtro.png", "Aplicar filtro")
-
+    if not (buscar_y_click("aplicar_filtro.png", "aplicar_filtro") or buscar_y_click("aplicar_filtro_en.png", "aplicar_filtro_en.png")):
+        messagebox.showwarning(
+            "Advertencia",
+            "No se encontró el botón 'aplicar_filtro.png' y 'aplicar_filtro_en.png'. Verifica que la página esté visible.",
+        )
+        return
     # Añadir factura
     time.sleep(5)
     if not buscar_y_click("anadir.png", "anadir"):
@@ -252,7 +254,7 @@ def iniciar_proceso():
         nit = str(factura_actual["NIT"]).strip()
         numero_factura = str(factura_actual["N° Factura"]).strip()
 
-        # 🧩 Extraer datos de productos asociados a la factura
+        # Extraer datos de productos asociados a la factura
         productos = productos_por_factura.get(numero_factura, [])
         if productos:
             primer_producto = productos[0]
@@ -270,7 +272,9 @@ def iniciar_proceso():
         nit_limpio = "".join(c for c in nit if c.isalnum()).lower()
 
         # Carpeta donde buscar los PDF
-        carpeta_pdf = r"O:\Perfil\Rogers Allan Merchan Sepulveda\Escritorio\BotHealthyBeta01\PDF"
+        carpeta_pdf = (
+            r"O:\Perfil\Rogers Allan Merchan Sepulveda\Escritorio\BotHealthyBeta01\PDF"
+        )
 
         # Buscar coincidencia en nombres de archivo
         pdf_encontrado = None
@@ -299,10 +303,11 @@ def iniciar_proceso():
             print("⚠️ PDF no encontrado.")
 
     except Exception as e:
-        messagebox.showerror("Error", f"No se pudo procesar la factura o buscar el PDF:\n{e}")
+        messagebox.showerror(
+            "Error", f"No se pudo procesar la factura o buscar el PDF:\n{e}"
+        )
         return
 
-    # === Continuación del flujo ===
     time.sleep(5)
     if not buscar_y_click("remitente.png", "remitente"):
         messagebox.showwarning(
@@ -363,48 +368,67 @@ def iniciar_proceso():
 
     pyautogui.sleep(6)
 
-    if not buscar_y_click("anadir.png", "anadir"):
-        messagebox.showwarning(
-            "Advertencia",
-            "No se encontró el botón 'anadir.png'. Verifica que la página esté visible.",
-        )
-        return
+    # === agregar todos los productos de la factura ===
+    for i, producto in enumerate(productos):
+        codigo_producto = str(producto["Código Producto"]).strip()
+        cantidad = str(producto["Cantidad"]).strip().replace(",", ".")
+        valor_unitario = str(producto["Precio"]).strip().replace(",", ".")
+        print(f"➕ Agregando producto {i+1}/{len(productos)}: {codigo_producto}")
 
-    pyautogui.sleep(6)
+        # Click en "añadir producto"
+        if not buscar_y_click("anadir.png", "añadir"):
+            messagebox.showwarning(
+                "Advertencia", "No se encontró el botón 'anadir.png'."
+            )
+            return
+        time.sleep(10)
 
-    if not buscar_y_click("anadir_producto.png", "anadir_producto"):
-        messagebox.showwarning(
-            "Advertencia",
-            "No se encontró el botón 'anadir_producto.png'. Verifica que la página esté visible.",
-        )
-        return
+        # Escribir código del producto
+        if not buscar_y_click("anadir_producto.png", "añadir_producto"):
+            messagebox.showwarning(
+                "Advertencia", "No se encontró el botón 'anadir_producto.png'."
+            )
+            return
+        time.sleep(10)
+        pyautogui.typewrite(codigo_producto)
+        time.sleep(4)
+        x, y = pyautogui.position()
+        pyautogui.moveTo(x, y + 40, duration=0.5)
+        pyautogui.click()
+        time.sleep(2)
 
-    pyautogui.typewrite(codigo_producto)
-    pyautogui.press("enter")
+        # Rellenar cantidad
+        if not buscar_y_click("cantidad.png", "cantidad"):
+            messagebox.showwarning(
+                "Advertencia", "No se encontró el botón 'cantidad.png'."
+            )
+            return
+        pyautogui.typewrite(cantidad)
+        pyautogui.press("tab")
+        time.sleep(5)
 
+        # Rellenar valor unitario
+        pyautogui.typewrite(valor_unitario)
+        pyautogui.press("tab")
+        time.sleep(5)
+
+        # Grabar producto
+        if not buscar_y_click("grabar.png", "grabar"):
+            messagebox.showwarning(
+                "Advertencia", "No se encontró el botón 'grabar.png'."
+            )
+            return
+        print(f"✅ Producto {codigo_producto} grabado correctamente.")
+        time.sleep(5)
+        pyautogui.press("esc")
+        pyautogui.sleep(5)
+
+    print(
+        f"Todos los {len(productos)} productos se agregaron correctamente ✅",
+    )
+    pyautogui.press("esc")
     pyautogui.sleep(5)
-
-    if not buscar_y_click("cantidad.png", "cantidad"):
-        messagebox.showwarning(
-            "Advertencia",
-            "No se encontró el botón 'cantidad.png'. Verifica que la página esté visible.",
-        )
-        return
-    pyautogui.typewrite(cantidad)
-    pyautogui.press("tab")
-    pyautogui.sleep(2)
-    pyautogui.typewrite(valor_unitario)
-    pyautogui.press("tab")
-    pyautogui.sleep(2)
-
-    if not buscar_y_click("grabar.png", "grabar"):
-        messagebox.showwarning(
-            "Advertencia",
-            "No se encontró el botón 'grabar.png'. Verifica que la página esté visible.",
-        )
-        return
-
-    messagebox.showinfo("Finalizado", "Primer paso completado correctamente ✅")
+    
 
 
 # === INTERFAZ TKINTER ===
@@ -507,4 +531,3 @@ btn_iniciar = tk.Button(
 btn_iniciar.pack(pady=15)
 
 root.mainloop()
-
