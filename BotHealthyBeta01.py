@@ -71,9 +71,7 @@ def cargar_datos_desde_supabase():
         productos_por_factura = {}
 
         # Obtener el código de clínica desde la primera factura
-        codigo_clinica = str(
-            facturas_data.data[0].get("codigo_clinica", "0000")
-        ).strip()
+        codigo_clinica = str(facturas_data.data[0].get("codigo_clinica", "0000")).strip()
 
         # --- Construir tabla de facturas ---
         for f in facturas_data.data:
@@ -111,14 +109,12 @@ def cargar_datos_desde_supabase():
             if numero_factura not in productos_por_factura:
                 productos_por_factura[numero_factura] = []
 
-            productos_por_factura[numero_factura].append(
-                {
-                    "Código Producto": str(p.get("codigo_producto", "")).strip(),
-                    "Nombre Producto": str(p.get("nombre", "")).strip(),
-                    "Cantidad": str(p.get("cantidad", "")).replace(",", ".").strip(),
-                    "Precio": str(p.get("precio", "")).replace(",", ".").strip(),
-                }
-            )
+            productos_por_factura[numero_factura].append({
+                "Código Producto": str(p.get("codigo_producto", "")).strip(),
+                "Nombre Producto": str(p.get("nombre", "")).strip(),
+                "Cantidad": str(p.get("cantidad", "")).replace(",", ".").strip(),
+                "Precio": str(p.get("precio", "")).replace(",", ".").strip(),
+            })
 
         # --- Convertir lista de facturas en DataFrame ---
         df_facturas = pd.DataFrame(facturas)
@@ -132,8 +128,8 @@ def cargar_datos_desde_supabase():
 
         # --- Actualizar interfaz ---
         actualizar_tabla_facturas()
-        btn_iniciar.config(state="normal")
-        lbl_codigo.config(text=f"🏥 Datos desde Supabase (Clínica {codigo_clinica})")
+        btn_iniciar.configure(state="normal")
+        lbl_codigo.configure(text=f"🏥 Datos desde Supabase (Clínica {codigo_clinica})")
 
         messagebox.showinfo("Éxito", "Datos cargados desde Supabase ✅")
 
@@ -156,7 +152,6 @@ def cargar_datos_desde_excel():
 
     try:
         df = pd.read_excel(archivo, dtype=str).fillna("")
-
         columnas_esperadas = [
             "Tipo",
             "N° Factura",
@@ -181,7 +176,7 @@ def cargar_datos_desde_excel():
 
         for _, fila in df.iterrows():
             tipo = str(fila["Tipo"]).strip().upper()
-
+            
             if tipo == "FACTURA":
                 factura_actual = str(fila["N° Factura"]).strip()
                 if not factura_actual:
@@ -215,16 +210,15 @@ def cargar_datos_desde_excel():
 
         origen_datos = "excel"
         actualizar_tabla_facturas()
-        btn_iniciar.config(state="normal")
-        lbl_codigo.config(text=f"🏥 Código clínica detectado: {codigo_clinica}")
+        btn_iniciar.configure(state="normal")
+        lbl_codigo.configure(text=f"🏥 Código clínica detectado: {codigo_clinica}")
         messagebox.showinfo("Éxito", "Archivo cargado correctamente ✅")
 
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo leer el archivo:\n{e}")
-
-
+        
 def actualizar_tabla_facturas():
-
+    
     for row in tree_facturas.get_children():
         tree_facturas.delete(row)
     for _, fila in df_facturas.iterrows():
@@ -232,7 +226,7 @@ def actualizar_tabla_facturas():
 
 
 def mostrar_productos(event):
-
+    
     item = tree_facturas.selection()
     if not item:
         return
@@ -244,7 +238,7 @@ def mostrar_productos(event):
     productos = productos_por_factura.get(numero_factura, [])
     for row in tree_productos.get_children():
         tree_productos.delete(row)
-
+        
     for prod in productos:
         tree_productos.insert(
             "",
@@ -257,7 +251,7 @@ def mostrar_productos(event):
             ),
         )
 
-    lbl_productos.config(
+    lbl_productos.configure(
         text=f"🛒 Productos de la factura seleccionada (Total: {len(productos)})"
     )
     print(f"🧾 Factura seleccionada: {numero_factura}")
@@ -277,7 +271,7 @@ def iniciar_proceso():
     subprocess.Popen(
         ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", URL_TECFOOD]
     )
-
+    
     time.sleep(20)
 
     if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6):
@@ -319,7 +313,7 @@ def iniciar_proceso():
     # Seleccionar archivo PDF
     time.sleep(8)
     buscar_y_click("seleccionar_archivo.png", "seleccionar")
-
+    
     time.sleep(5)
 
     if not buscar_y_click("Escritorio.png", "Escritorio"):
@@ -334,7 +328,8 @@ def iniciar_proceso():
     pyautogui.doubleClick()
     x, y = pyautogui.position()
     pyautogui.moveTo(x, y + 50, duration=0.5)
-
+    
+    
     time.sleep(2)
 
     if not buscar_y_click("carpetapdf.png", "carpetapdf"):
@@ -351,6 +346,7 @@ def iniciar_proceso():
         nit = str(factura_actual["NIT"]).strip()
         numero_factura = str(factura_actual["N° Factura"]).strip()
 
+
         productos = productos_por_factura.get(numero_factura, [])
         if productos:
             primer_producto = productos[0]
@@ -361,10 +357,12 @@ def iniciar_proceso():
             codigo_producto = cantidad = valor_unitario = ""
             print(f"⚠️ No se encontraron productos para la factura {numero_factura}")
 
+
         empresa_limpia = "".join(
             c for c in empresa if c.isalnum() or c.isspace()
         ).lower()
         nit_limpio = "".join(c for c in nit if c.isalnum()).lower()
+
 
         carpeta_pdf = (
             r"O:\Perfil\Rogers Allan Merchan Sepulveda\Escritorio\BotHealthyBeta01\PDF"
@@ -443,7 +441,7 @@ def iniciar_proceso():
     if not buscar_y_click("productos.png", "productos"):
         messagebox.showwarning("Advertencia", "No se encontró 'productos.png'.")
         return
-
+    
     pyautogui.sleep(6)
 
     # Agregar productos
@@ -454,10 +452,12 @@ def iniciar_proceso():
 
         print(f"➕ Agregando producto {i+1}/{len(productos)}: {codigo_producto}")
 
+
         if not buscar_y_click("anadir.png", "añadir"):
             messagebox.showwarning("Advertencia", "No se encontró 'anadir.png'.")
             return
         time.sleep(10)
+
 
         if not buscar_y_click("anadir_producto.png", "añadir_producto"):
             messagebox.showwarning(
@@ -473,6 +473,7 @@ def iniciar_proceso():
         pyautogui.click()
         time.sleep(2)
 
+
         if not buscar_y_click("cantidad.png", "cantidad"):
             messagebox.showwarning("Advertencia", "No se encontró 'cantidad.png'.")
             return
@@ -481,9 +482,11 @@ def iniciar_proceso():
         pyautogui.press("tab")
         time.sleep(5)
 
+
         pyautogui.typewrite(valor_unitario)
         pyautogui.press("tab")
         time.sleep(5)
+
 
         if not buscar_y_click("grabar.png", "grabar"):
             messagebox.showwarning("Advertencia", "No se encontró 'grabar.png'.")
@@ -501,84 +504,202 @@ def iniciar_proceso():
     print(f"Todos los {len(productos)} productos se agregaron correctamente ✅")
 
 
-# === INTERFAZ TKINTER ===
-root = tk.Tk()
-root.title("BotHealthy Beta - Carga de Facturas TecFood")
-root.geometry("900x600")
+# === INTERFAZ MODERNA CON CUSTOMTKINTER (ESTILO IPHONE / MACOS) ===
+import customtkinter as ctk
+from tkinter import ttk, messagebox
 
-lbl_titulo = tk.Label(root, text="BotHealthy Beta", font=("Segoe UI", 24, "bold"))
-lbl_titulo.pack(pady=12)
+# === CONFIGURACIÓN DE ESTILO ===
+ctk.set_appearance_mode("dark")       # Modo oscuro elegante
+ctk.set_default_color_theme("blue")   # Base de color
 
-frame_botones = tk.Frame(root)
-frame_botones.pack(pady=5)
+root = ctk.CTk()
+root.title("BotHealthy - Carga de Facturas TecFood")
+root.attributes('-fullscreen', True)
+root.configure(fg_color="#0E0F12")
 
-btn_excel = tk.Button(
-    frame_botones,
-    text="📂 Cargar archivo Excel",
-    command=cargar_datos_desde_excel,
-    font=("Segoe UI", 11),
-    background="green",
-    foreground="white",
+# === PALETA DE COLORES CORPORATIVOS ===
+PRIMARY = "#3A7BD5"      # Azul suave
+PRIMARY_HOVER = "#5EA0FF"
+ACCENT = "#FFA726"       # Naranja cálido
+ACCENT_HOVER = "#FFB74D"
+CARD_BG = "#1C1E23"
+TEXT_MAIN = "#FFFFFF"
+TEXT_SECOND = "#B0B0B0"
+
+# === HEADER SUPERIOR ===
+header = ctk.CTkFrame(root, fg_color=CARD_BG, corner_radius=20)
+header.pack(fill="x", padx=20, pady=15)
+
+lbl_titulo = ctk.CTkLabel(
+    header,
+    text="BotHealthy - Carga de Facturas TecFood",
+    font=("Segoe UI", 28, "bold"),
+    text_color=TEXT_MAIN,
 )
-btn_excel.pack(side="left", padx=5)
+lbl_titulo.pack(side="left", padx=30, pady=15)
 
-btn_supabase = tk.Button(
-    frame_botones,
+
+def cerrar_app():
+    if messagebox.askyesno("Salir", "¿Deseas cerrar la aplicación?"):
+        root.destroy()
+
+
+btn_close = ctk.CTkButton(
+    header,
+    text="✕",
+    command=cerrar_app,
+    width=40,
+    height=40,
+    corner_radius=20,
+    fg_color="#FF5252",
+    hover_color="#FF6B6B",
+    font=("Segoe UI", 18, "bold"),
+)
+btn_close.pack(side="right", padx=25, pady=10)
+
+# === CUERPO PRINCIPAL ===
+main_frame = ctk.CTkFrame(root, fg_color="#0E0F12", corner_radius=0)
+main_frame.pack(fill="both", expand=True, padx=30, pady=10)
+
+# --- BOTONES DE CARGA ---
+btn_frame = ctk.CTkFrame(main_frame, fg_color=CARD_BG, corner_radius=25)
+btn_frame.pack(pady=25)
+
+btn_excel = ctk.CTkButton(
+    btn_frame,
+    text="📂 Cargar Excel",
+    command=cargar_datos_desde_excel,
+    corner_radius=25,
+    fg_color=ACCENT,
+    hover_color=ACCENT_HOVER,
+    text_color="#000000",
+    font=("Segoe UI", 15, "bold"),
+    width=200,
+)
+btn_excel.pack(side="left", padx=15, pady=15)
+
+btn_supabase = ctk.CTkButton(
+    btn_frame,
     text="🗄️ Cargar desde Supabase",
     command=cargar_datos_desde_supabase,
-    font=("Segoe UI", 11),
-    background="blue",
-    foreground="white",
+    corner_radius=25,
+    fg_color=PRIMARY,
+    hover_color=PRIMARY_HOVER,
+    text_color="#FFFFFF",
+    font=("Segoe UI", 15, "bold"),
+    width=250,
 )
-btn_supabase.pack(side="left", padx=5)
+btn_supabase.pack(side="left", padx=15, pady=15)
 
-lbl_codigo = tk.Label(
-    root, text="💻 Código de clínica detectado: ----", font=("Segoe UI", 11)
+# --- CÓDIGO DE CLÍNICA ---
+lbl_codigo = ctk.CTkLabel(
+    main_frame,
+    text="Código de clínica detectado: ----",
+    font=("Segoe UI", 15, "bold"),
+    text_color=TEXT_SECOND,
 )
 lbl_codigo.pack(pady=5)
 
+# === SECCIÓN DE TABLAS ===
+tables_frame = ctk.CTkFrame(main_frame, fg_color=CARD_BG, corner_radius=25)
+tables_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-frame_tablas = tk.Frame(root)
-frame_tablas.pack(pady=10, fill="both", expand=True)
 
-# Facturas
-lbl_facturas = tk.Label(
-    frame_tablas, text="📑 Facturas detectadas", font=("Segoe UI", 12, "bold")
-)
-lbl_facturas.pack()
+def crear_titulo(text):
+    return ctk.CTkLabel(
+        tables_frame,
+        text=text,
+        font=("Segoe UI", 18, "bold"),
+        text_color=ACCENT,
+        anchor="w",
+    )
 
-columnas_fact = ("ID_Factura", "N° Factura", "Fecha", "Empresa", "NIT")
+
+# --- FACTURAS ---
+lbl_facturas = crear_titulo("📑 Facturas detectadas")
+lbl_facturas.pack(anchor="w", pady=(10, 0), padx=20)
+
 tree_facturas = ttk.Treeview(
-    frame_tablas, columns=columnas_fact, show="headings", height=6
+    tables_frame,
+    columns=("ID_Factura", "N° Factura", "Fecha", "Empresa", "NIT"),
+    show="headings",
+    height=6,
 )
-for col in columnas_fact:
+for col in ("ID_Factura", "N° Factura", "Fecha", "Empresa", "NIT"):
     tree_facturas.heading(col, text=col)
-    tree_facturas.column(col, width=150)
-tree_facturas.pack(side="top", fill="both", expand=True)
+    tree_facturas.column(col, anchor="center", width=180)
+tree_facturas.pack(fill="x", padx=25, pady=8)
 tree_facturas.bind("<Double-1>", mostrar_productos)
 
-# Productos
-lbl_productos = tk.Label(
-    frame_tablas, text="🛒 Productos", font=("Segoe UI", 12, "bold")
+# --- PRODUCTOS ---
+lbl_productos = ctk.CTkLabel(
+    tables_frame,
+    text="🛒 Productos",
+    font=("Segoe UI", 18, "bold"),
+    text_color=ACCENT,
+    anchor="w",
 )
-lbl_productos.pack()
+lbl_productos.pack(anchor="w", pady=(15, 0), padx=20)
 
-columnas_prod = ("Código Producto", "Nombre Producto", "Cantidad", "Precio")
 tree_productos = ttk.Treeview(
-    frame_tablas, columns=columnas_prod, show="headings", height=6
+    tables_frame,
+    columns=("Código Producto", "Nombre Producto", "Cantidad", "Precio"),
+    show="headings",
+    height=6,
 )
-for col in columnas_prod:
+for col in ("Código Producto", "Nombre Producto", "Cantidad", "Precio"):
     tree_productos.heading(col, text=col)
-    tree_productos.column(col, width=150)
-tree_productos.pack(side="bottom", fill="both", expand=True)
-btn_iniciar = tk.Button(
-    root,
-    text="🚀 Comenzar",
-    background="orange",
-    state="disabled",
-    command=iniciar_proceso,
-    font=("Segoe UI", 12, "bold"),
-)
-btn_iniciar.pack(pady=15)
+    tree_productos.column(col, anchor="center", width=180)
+tree_productos.pack(fill="x", padx=25, pady=8)
 
+# --- ESTILO DE TABLAS ---
+style = ttk.Style()
+style.theme_use("clam")
+style.configure(
+    "Treeview",
+    background="#22252A",
+    fieldbackground="#22252A",
+    foreground="#FFFFFF",
+    rowheight=30,
+    borderwidth=0,
+    font=("Segoe UI", 12),
+)
+style.configure(
+    "Treeview.Heading",
+    background="#2E3238",
+    foreground="#FFA726",
+    font=("Segoe UI", 13, "bold"),
+    borderwidth=0,
+)
+style.map("Treeview", background=[("selected", "#5EA0FF")])
+
+# --- BOTÓN INICIAR ---
+btn_iniciar = ctk.CTkButton(
+    main_frame,
+    text="🚀 Iniciar proceso",
+    command=iniciar_proceso,
+    fg_color=PRIMARY,
+    hover_color=PRIMARY_HOVER,
+    text_color="#FFFFFF",
+    font=("Segoe UI", 17, "bold"),
+    corner_radius=30,
+    width=250,
+    height=50,
+    state="disabled",
+)
+btn_iniciar.pack(pady=25)
+
+# --- FOOTER (Opcional, mejora profesionalismo) ---
+footer = ctk.CTkFrame(root, fg_color=CARD_BG, corner_radius=0)
+footer.pack(fill="x", side="bottom")
+
+lbl_footer = ctk.CTkLabel(
+    footer,
+    text="BotHealthy © 2025 | Desarrollado por TecFood",
+    font=("Segoe UI", 11),
+    text_color=TEXT_SECOND,
+)
+lbl_footer.pack(pady=8)
+
+# === INICIO DE APLICACIÓN ===
 root.mainloop()
