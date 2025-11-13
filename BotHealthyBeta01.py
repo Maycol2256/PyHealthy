@@ -504,7 +504,7 @@ def iniciar_proceso():
     print(f"Todos los {len(productos)} productos se agregaron correctamente ✅")
 
 
-# === INTERFAZ MODERNA CON CUSTOMTKINTER (ESTILO IPHONE / MACOS) ===
+# === INTERFAZ MODERNA CON CUSTOMTKINTER ===
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 
@@ -558,7 +558,7 @@ btn_close = ctk.CTkButton(
 btn_close.pack(side="right", padx=25, pady=10)
 
 # === CUERPO PRINCIPAL ===
-main_frame = ctk.CTkFrame(root, fg_color="#0E0F12", corner_radius=0)
+main_frame = ctk.CTkScrollableFrame(root, fg_color="#0E0F12", corner_radius=0)
 main_frame.pack(fill="both", expand=True, padx=30, pady=10)
 
 # --- BOTONES DE CARGA ---
@@ -695,11 +695,9 @@ footer.pack(fill="x", side="bottom")
 
 lbl_footer = ctk.CTkLabel(
     footer,
-    text="BotHealthy © 2025 | Desarrollado por TecFood",
+    text="Desarrolado por",
     font=("Segoe UI", 11),
     text_color=TEXT_SECOND,
 )
 lbl_footer.pack(pady=8)
-
-# === INICIO DE APLICACIÓN ===
 root.mainloop()
