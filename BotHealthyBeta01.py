@@ -71,7 +71,9 @@ def cargar_datos_desde_supabase():
         productos_por_factura = {}
 
         # Obtener el código de clínica desde la primera factura
-        codigo_clinica = str(facturas_data.data[0].get("codigo_clinica", "0000")).strip()
+        codigo_clinica = str(
+            facturas_data.data[0].get("codigo_clinica", "0000")
+        ).strip()
 
         # --- Construir tabla de facturas ---
         for f in facturas_data.data:
@@ -109,12 +111,14 @@ def cargar_datos_desde_supabase():
             if numero_factura not in productos_por_factura:
                 productos_por_factura[numero_factura] = []
 
-            productos_por_factura[numero_factura].append({
-                "Código Producto": str(p.get("codigo_producto", "")).strip(),
-                "Nombre Producto": str(p.get("nombre", "")).strip(),
-                "Cantidad": str(p.get("cantidad", "")).replace(",", ".").strip(),
-                "Precio": str(p.get("precio", "")).replace(",", ".").strip(),
-            })
+            productos_por_factura[numero_factura].append(
+                {
+                    "Código Producto": str(p.get("codigo_producto", "")).strip(),
+                    "Nombre Producto": str(p.get("nombre", "")).strip(),
+                    "Cantidad": str(p.get("cantidad", "")).replace(",", ".").strip(),
+                    "Precio": str(p.get("precio", "")).replace(",", ".").strip(),
+                }
+            )
 
         # --- Convertir lista de facturas en DataFrame ---
         df_facturas = pd.DataFrame(facturas)
@@ -176,7 +180,7 @@ def cargar_datos_desde_excel():
 
         for _, fila in df.iterrows():
             tipo = str(fila["Tipo"]).strip().upper()
-            
+
             if tipo == "FACTURA":
                 factura_actual = str(fila["N° Factura"]).strip()
                 if not factura_actual:
@@ -216,9 +220,10 @@ def cargar_datos_desde_excel():
 
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo leer el archivo:\n{e}")
-        
+
+
 def actualizar_tabla_facturas():
-    
+
     for row in tree_facturas.get_children():
         tree_facturas.delete(row)
     for _, fila in df_facturas.iterrows():
@@ -226,7 +231,7 @@ def actualizar_tabla_facturas():
 
 
 def mostrar_productos(event):
-    
+
     item = tree_facturas.selection()
     if not item:
         return
@@ -238,7 +243,7 @@ def mostrar_productos(event):
     productos = productos_por_factura.get(numero_factura, [])
     for row in tree_productos.get_children():
         tree_productos.delete(row)
-        
+
     for prod in productos:
         tree_productos.insert(
             "",
@@ -259,249 +264,243 @@ def mostrar_productos(event):
 
 
 def iniciar_proceso():
-    """Usa los datos cargados (de Excel o Supabase)."""
+    """Usa los datos cargados (de Excel o Supabase). Recorre todas las facturas en df_facturas."""
     if df_facturas.empty:
         messagebox.showerror("Error", "Primero carga datos desde Excel o Supabase.")
         return
 
-    print(
-        f"🏁 Iniciando proceso para la clínica {codigo_clinica} ({origen_datos.upper()})..."
-    )
+    print(f"🏁 Iniciando proceso para la clínica {codigo_clinica} ({origen_datos.upper()})...")
     print("🔹 Abriendo TecFood en Edge...")
-    subprocess.Popen(
-        ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", URL_TECFOOD]
-    )
-    
+    subprocess.Popen(["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", URL_TECFOOD])
     time.sleep(20)
 
-    if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6):
-        messagebox.showwarning(
-            "Advertencia", "No se encontró el botón unidad_select.png"
-        )
-        return
-
-    # Selección de clínica
-    time.sleep(5)
-    pyautogui.typewrite(codigo_clinica, interval=0.1)
-    time.sleep(2)
-    x, y = pyautogui.position()
-    pyautogui.moveTo(x, y + 50, duration=0.5)
-    pyautogui.click()
-    print(f"✅ Clínica {codigo_clinica} seleccionada correctamente.")
-
-    # Aplicar filtro
-    time.sleep(5)
-    if not (
-        buscar_y_click("aplicar_filtro.png", "aplicar_filtro")
-        or buscar_y_click("aplicar_filtro_en.png", "aplicar_filtro_en.png")
-    ):
-        messagebox.showwarning(
-            "Advertencia",
-            "No se encontró el botón 'aplicar_filtro.png' ni 'aplicar_filtro_en.png'.",
-        )
-        return
-
-    # Añadir factura
-    time.sleep(5)
-    if not buscar_y_click("anadir.png", "anadir"):
-        messagebox.showwarning(
-            "Advertencia",
-            "No se encontró el botón 'anadir.png'.",
-        )
-        return
-
-    # Seleccionar archivo PDF
-    time.sleep(8)
-    buscar_y_click("seleccionar_archivo.png", "seleccionar")
-    
-    time.sleep(5)
-
-    if not buscar_y_click("Escritorio.png", "Escritorio"):
-        messagebox.showwarning("Advertencia", "No se encontró 'Escritorio.png'.")
-        return
-    time.sleep(2)
-
-    if not buscar_y_click("Carpeta.png", "Carpeta"):
-        messagebox.showwarning("Advertencia", "No se encontró 'Carpeta.png'.")
-        return
-
-    pyautogui.doubleClick()
-    x, y = pyautogui.position()
-    pyautogui.moveTo(x, y + 50, duration=0.5)
-    
-    
-    time.sleep(2)
-
-    if not buscar_y_click("carpetapdf.png", "carpetapdf"):
-        messagebox.showwarning("Advertencia", "No se encontró 'carpetapdf.png'.")
-        return
-
-    pyautogui.doubleClick()
-    time.sleep(2)
-
-    # Buscar y seleccionar PDF correspondiente
-    try:
-        factura_actual = df_facturas.iloc[0]
-        empresa = str(factura_actual["Empresa"]).strip()
-        nit = str(factura_actual["NIT"]).strip()
+    # Bucle principal: una iteración por cada fila (factura) en df_facturas
+    for index, factura_actual in df_facturas.iterrows():
         numero_factura = str(factura_actual["N° Factura"]).strip()
-
-
+        empresa = str(factura_actual.get("Empresa", "")).strip()
+        nit = str(factura_actual.get("NIT", "")).strip()
         productos = productos_por_factura.get(numero_factura, [])
-        if productos:
-            primer_producto = productos[0]
-            codigo_producto = str(primer_producto["Código Producto"]).strip()
-            cantidad = str(primer_producto["Cantidad"]).strip().replace(",", ".")
-            valor_unitario = str(primer_producto["Precio"]).strip().replace(",", ".")
-        else:
-            codigo_producto = cantidad = valor_unitario = ""
-            print(f"⚠️ No se encontraron productos para la factura {numero_factura}")
 
+        print(f"\n\n🔁 Procesando factura {index+1}/{len(df_facturas)} → {numero_factura}")
+        print(f"   Empresa: {empresa}  NIT: {nit}  Productos: {len(productos)}")
 
-        empresa_limpia = "".join(
-            c for c in empresa if c.isalnum() or c.isspace()
-        ).lower()
-        nit_limpio = "".join(c for c in nit if c.isalnum()).lower()
+        # Si no hay productos y quieres SALTAR facturas vacías
+        if not productos:
+            print(f"⚠️ Sin productos para {numero_factura}, se salta.")
+            continue
+        
 
+        # --- Buscar y seleccionar unidad (cada factura volvemos a buscarla) ---
+        if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6):
+            messagebox.showwarning("Advertencia", "No se encontró el botón unidad_select.png")
+            # saltamos esta factura y continuamos con la siguiente
+            continue
 
-        carpeta_pdf = (
-            r"O:\Perfil\Rogers Allan Merchan Sepulveda\Escritorio\BotHealthyBeta01\PDF"
-        )
+        # Selección de clínica
+        try:
+            time.sleep(5)
+            pyautogui.typewrite(codigo_clinica, interval=0.1)
+            time.sleep(2)
+            x, y = pyautogui.position()
+            pyautogui.moveTo(x, y + 50, duration=0.5)
+            pyautogui.click()
+            print(f"✅ Clínica {codigo_clinica} seleccionada correctamente.")
+        except Exception as e:
+            print("Error al seleccionar clínica:", e)
+            continue
+        pyautogui.press("tab")
+        pyautogui.press("tab")
+        pyautogui.press("tab")
+        time.sleep(2)
+        try:
+            fecha = pd.to_datetime(factura_actual["Fecha"])
+            fecha_formateada = fecha.strftime("%d%m%Y")
 
-        pdf_encontrado: Optional[str] = None
-        for archivo in os.listdir(carpeta_pdf):
-            nombre_archivo = archivo.lower()
-            if (
-                nit_limpio in nombre_archivo
-                and any(palabra in nombre_archivo for palabra in empresa_limpia.split())
-                and archivo.endswith(".pdf")
-            ):
-                pdf_encontrado = os.path.join(carpeta_pdf, archivo)
-                break
+            pyautogui.typewrite(fecha_formateada, interval=0.1)
+            pyautogui.press("tab")
+            print(f"📅 Fecha ingresada: {fecha_formateada}")
+        except Exception as e:
+            print("⚠️ Error al procesar la fecha:", e)
+            continue
 
-        if pdf_encontrado:
-            print(f"📄 PDF encontrado: {pdf_encontrado}")
-            pyautogui.typewrite(pdf_encontrado)
-            time.sleep(1)
-            pyautogui.press("enter")
-            print("✅ PDF seleccionado correctamente.")
-        else:
-            messagebox.showwarning(
-                "Advertencia",
-                f"No se encontró un PDF que contenga '{empresa}' y '{nit}' en su nombre.\n"
-                "Verifica que el archivo esté en la carpeta configurada.",
-            )
-            print("⚠️ PDF no encontrado.")
+        # Aplicar filtro
+        time.sleep(5)
+        if not (buscar_y_click("aplicar_filtro.png", "aplicar_filtro") or buscar_y_click("aplicar_filtro_en.png", "aplicar_filtro_en.png")):
+            messagebox.showwarning("Advertencia", "No se encontró el botón 'aplicar_filtro'.")
+            continue
 
-    except Exception as e:
-        messagebox.showerror(
-            "Error", f"No se pudo procesar la factura o buscar el PDF:\n{e}"
-        )
-        return
+        # Añadir factura
+        time.sleep(5)
+        if not buscar_y_click("anadir.png", "anadir"):
+            messagebox.showwarning("Advertencia", "No se encontró el botón 'anadir.png'.")
+            continue
 
-    time.sleep(5)
-    if not buscar_y_click("remitente.png", "remitente"):
-        messagebox.showwarning("Advertencia", "No se encontró 'remitente.png'.")
-        return
+        # Seleccionar archivo PDF (explorador)
+        time.sleep(8)
+        buscar_y_click("seleccionar_archivo.png", "seleccionar")
+        time.sleep(5)
+        if not buscar_y_click("Escritorio.png", "Escritorio"):
+            messagebox.showwarning("Advertencia", "No se encontró 'Escritorio.png'.")
+            continue
+        time.sleep(2)
+        if not buscar_y_click("Carpeta.png", "Carpeta"):
+            messagebox.showwarning("Advertencia", "No se encontró 'Carpeta.png'.")
+            continue
 
-    pyautogui.typewrite(nit)
-    pyautogui.sleep(3)
-    pyautogui.press("tab")
-    pyautogui.sleep(14)
+        pyautogui.doubleClick()
+        time.sleep(1)
+        x, y = pyautogui.position()
+        pyautogui.moveTo(x, y + 50, duration=0.5)
+        time.sleep(2)
+        if not buscar_y_click("carpetapdf.png", "carpetapdf"):
+            messagebox.showwarning("Advertencia", "No se encontró 'carpetapdf.png'.")
+            continue
+        pyautogui.doubleClick()
+        time.sleep(2)
 
-    if not buscar_y_click("numero_factura.png", "numero_factura"):
-        messagebox.showwarning("Advertencia", "No se encontró 'numero_factura.png'.")
-        return
+        # Buscar y seleccionar PDF correspondiente a esta factura
+        try:
+            empresa_limpia = "".join(c for c in empresa if c.isalnum() or c.isspace()).lower()
+            nit_limpio = "".join(c for c in nit if c.isalnum()).lower()
+            carpeta_pdf = r"O:\Perfil\Rogers Allan Merchan Sepulveda\Escritorio\BotHealthyBeta01\PDF"
+            pdf_encontrado: Optional[str] = None
+            for archivo in os.listdir(carpeta_pdf):
+                nombre_archivo = archivo.lower()
+                if (nit_limpio in nombre_archivo and any(palabra in nombre_archivo for palabra in empresa_limpia.split()) and archivo.endswith(".pdf")):
+                    pdf_encontrado = os.path.join(carpeta_pdf, archivo)
+                    break
 
-    pyautogui.typewrite(numero_factura)
-    pyautogui.press("tab")
-    pyautogui.sleep(2)
+            if pdf_encontrado:
+                print(f"📄 PDF encontrado: {pdf_encontrado}")
+                pyautogui.typewrite(pdf_encontrado)
+                time.sleep(1)
+                pyautogui.press("enter")
+                print("✅ PDF seleccionado correctamente.")
+            else:
+                messagebox.showwarning("Advertencia", f"No se encontró un PDF para '{empresa}' y '{nit}'. Verifica carpeta.")
+                print("⚠️ PDF no encontrado. Se continúa con la factura (si corresponde).")
+                # si quieres saltar la factura si no hay PDF, usa: continue
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo procesar la factura o buscar el PDF:\n{e}")
+            continue
 
-    if not buscar_y_click("serie.png", "serie"):
-        messagebox.showwarning("Advertencia", "No se encontró 'serie.png'.")
-        return
+        # Remitente y número de factura
+        time.sleep(5)
+        if not buscar_y_click("remitente.png", "remitente"):
+            messagebox.showwarning("Advertencia", "No se encontró 'remitente.png'.")
+            continue
+        pyautogui.typewrite(nit)
+        pyautogui.sleep(3)
+        pyautogui.press("tab")
+        pyautogui.sleep(14)
 
-    x, y = pyautogui.position()
-    pyautogui.moveTo(x, y + 40, duration=0.5)
-    pyautogui.click()
+        if not buscar_y_click("numero_factura.png", "numero_factura"):
+            messagebox.showwarning("Advertencia", "No se encontró 'numero_factura.png'.")
+            continue
+        pyautogui.typewrite(numero_factura)
+        pyautogui.press("tab")
+        pyautogui.sleep(2)
 
-    if not buscar_y_click("valor.png", "valor"):
-        messagebox.showwarning("Advertencia", "No se encontró 'valor.png'.")
-        return
-
-    pyautogui.typewrite("0")
-    pyautogui.press("tab")
-
-    if not buscar_y_click("grabar.png", "grabar"):
-        messagebox.showwarning("Advertencia", "No se encontró 'grabar.png'.")
-        return
-
-    pyautogui.sleep(13)
-
-    if not buscar_y_click("productos.png", "productos"):
-        messagebox.showwarning("Advertencia", "No se encontró 'productos.png'.")
-        return
-    
-    pyautogui.sleep(6)
-
-    # Agregar productos
-    for i, producto in enumerate(productos):
-        codigo_producto = str(producto["Código Producto"]).strip()
-        cantidad = str(producto["Cantidad"]).strip().replace(",", ".")
-        valor_unitario = str(producto["Precio"]).strip().replace(",", ".")
-
-        print(f"➕ Agregando producto {i+1}/{len(productos)}: {codigo_producto}")
-
-
-        if not buscar_y_click("anadir.png", "añadir"):
-            messagebox.showwarning("Advertencia", "No se encontró 'anadir.png'.")
-            return
-        time.sleep(10)
-
-
-        if not buscar_y_click("anadir_producto.png", "añadir_producto"):
-            messagebox.showwarning(
-                "Advertencia", "No se encontró 'anadir_producto.png'."
-            )
-            return
-        time.sleep(10)
-
-        pyautogui.typewrite(codigo_producto)
-        time.sleep(4)
+        if not buscar_y_click("serie.png", "serie"):
+            messagebox.showwarning("Advertencia", "No se encontró 'serie.png'.")
+            continue
         x, y = pyautogui.position()
         pyautogui.moveTo(x, y + 40, duration=0.5)
         pyautogui.click()
-        time.sleep(2)
 
+        if not buscar_y_click("valor.png", "valor"):
+            messagebox.showwarning("Advertencia", "No se encontró 'valor.png'.")
+            continue
 
-        if not buscar_y_click("cantidad.png", "cantidad"):
-            messagebox.showwarning("Advertencia", "No se encontró 'cantidad.png'.")
-            return
-
-        pyautogui.typewrite(cantidad)
+        pyautogui.typewrite("0")
         pyautogui.press("tab")
-        time.sleep(5)
-
-
-        pyautogui.typewrite(valor_unitario)
-        pyautogui.press("tab")
-        time.sleep(5)
-
 
         if not buscar_y_click("grabar.png", "grabar"):
             messagebox.showwarning("Advertencia", "No se encontró 'grabar.png'.")
-            return
+            continue
 
-        print(f"✅ Producto {codigo_producto} grabado correctamente.")
+        pyautogui.sleep(13)
+
+        if not buscar_y_click("productos.png", "productos"):
+            messagebox.showwarning("Advertencia", "No se encontró 'productos.png'.")
+            continue
+
+        pyautogui.sleep(6)
+
+        # Agregar productos (si hay)
+        for i, producto in enumerate(productos):
+            try:
+                codigo_producto = str(producto["Código Producto"]).strip()
+                cantidad = str(producto["Cantidad"]).strip().replace(",", ".")
+                valor_unitario = str(producto["Precio"]).strip().replace(",", ".")
+
+                print(f"➕ Agregando producto {i+1}/{len(productos)}: {codigo_producto}")
+                if not buscar_y_click("anadir.png", "añadir"):
+                    messagebox.showwarning("Advertencia", "No se encontró 'anadir.png'.")
+                    raise Exception("boton_anadir_no_encontrado")
+                time.sleep(10)
+
+                if not buscar_y_click("anadir_producto.png", "añadir_producto"):
+                    messagebox.showwarning("Advertencia", "No se encontró 'anadir_producto.png'.")
+                    raise Exception("boton_anadir_producto_no_encontrado")
+                time.sleep(10)
+
+                pyautogui.typewrite(codigo_producto)
+                time.sleep(4)
+                x, y = pyautogui.position()
+                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.click()
+                time.sleep(2)
+
+                if not buscar_y_click("cantidad.png", "cantidad"):
+                    messagebox.showwarning("Advertencia", "No se encontró 'cantidad.png'.")
+                    raise Exception("boton_cantidad_no_encontrado")
+
+                pyautogui.typewrite(cantidad)
+                pyautogui.press("tab")
+                time.sleep(5)
+
+                pyautogui.typewrite(valor_unitario)
+                pyautogui.press("tab")
+                time.sleep(5)
+
+                if not buscar_y_click("grabar.png", "grabar"):
+                    messagebox.showwarning("Advertencia", "No se encontró 'grabar.png'.")
+                    raise Exception("boton_grabar_no_encontrado")
+
+                print(f"✅ Producto {codigo_producto} grabado correctamente.")
+                time.sleep(5)
+                pyautogui.press("esc")
+                pyautogui.sleep(5)
+            except Exception as e:
+                print(f"❌ Error al agregar producto {codigo_producto}: {e}")
+                continue
+
+        # Finalizar esta factura
+        if not buscar_y_click("FinalizarF.png", "FinalizarF"):
+            messagebox.showwarning("Advertencia", "No se encontró 'FinalizarF.png'.")
+            continue
         time.sleep(5)
-        pyautogui.press("esc")
-        pyautogui.sleep(5)
+        if not buscar_y_click("si.png", "si"):
+            messagebox.showwarning("Advertencia", "No se encontró 'si.png'.")
+            continue
+        time.sleep(2)
+        
+        print(f"✅ Factura {numero_factura} procesada correctamente (productos: {len(productos)})")
 
-    if not buscar_y_click("FinalizarF.png", "FinalizarF"):
-        messagebox.showwarning("Advertencia", "No se encontró 'FinalizarF.png'.")
-        return
+        # --- Recargar la página para la siguiente factura ---
+        time.sleep(2)
+        try:
+            pyautogui.hotkey("ctrl", "r")
+            time.sleep(10)
+        except Exception:
+            try:
+                pyautogui.press("f5")
+                time.sleep(10)
+            except Exception:
+                pass
+    print("🏁 Proceso completado para todas las facturas.")
 
-    print(f"Todos los {len(productos)} productos se agregaron correctamente ✅")
 
 
 # === INTERFAZ MODERNA CON CUSTOMTKINTER ===
@@ -509,18 +508,18 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox
 
 # === CONFIGURACIÓN DE ESTILO ===
-ctk.set_appearance_mode("dark")       # Modo oscuro elegante
-ctk.set_default_color_theme("blue")   # Base de color
+ctk.set_appearance_mode("dark")  # Modo oscuro elegante
+ctk.set_default_color_theme("blue")  # Base de color
 
 root = ctk.CTk()
 root.title("BotHealthy - Carga de Facturas TecFood")
-root.attributes('-fullscreen', True)
+root.attributes("-fullscreen", True)
 root.configure(fg_color="#0E0F12")
 
 # === PALETA DE COLORES CORPORATIVOS ===
-PRIMARY = "#3A7BD5"      # Azul suave
+PRIMARY = "#3A7BD5"  # Azul suave
 PRIMARY_HOVER = "#5EA0FF"
-ACCENT = "#FFA726"       # Naranja cálido
+ACCENT = "#FFA726"  # Naranja cálido
 ACCENT_HOVER = "#FFB74D"
 CARD_BG = "#1C1E23"
 TEXT_MAIN = "#FFFFFF"
