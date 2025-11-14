@@ -52,7 +52,7 @@ def cargar_datos_desde_supabase():
 
     try:
         facturas_data = supabase.table("facturas").select("*").execute()
-        productos_data = supabase.table("productos").select("*").execute()
+        productos_data = supabase.table("catalogo_productos").select("*").execute()
 
         print("🧩 Ejemplo de datos en 'productos':")
         if productos_data.data:
@@ -77,18 +77,14 @@ def cargar_datos_desde_supabase():
 
         # --- Construir tabla de facturas ---
         for f in facturas_data.data:
-            id_factura = str(f.get("id", "")).strip()
-            numero_factura = str(f.get("numero_factura", "")).strip()
+            facturas.append({
+            "ID_Factura": str(f["id"]),
+            "N° Factura": str(f["numero_factura"]),
+            "Fecha": str(f["fecha_factura"]),
+            "Empresa": f.get("proveedores", {}).get("nombre", ""),
+            "NIT": f.get("proveedores", {}).get("nit", "")
+        })
 
-            facturas.append(
-                {
-                    "ID_Factura": id_factura,
-                    "N° Factura": numero_factura,
-                    "Fecha": str(f.get("fecha", "")).strip(),
-                    "Empresa": str(f.get("nombre_empresa", "")).strip(),
-                    "NIT": str(f.get("nit", "")).strip(),
-                }
-            )
 
             # Inicializar lista vacía de productos por número de factura
             productos_por_factura[numero_factura] = []
