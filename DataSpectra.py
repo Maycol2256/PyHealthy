@@ -95,10 +95,10 @@ def _slide_and_fade_in(win, start_offset=40, steps=8, delay=15):
 
 def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
     estilos = {
-        "info":    {"icon": "ℹ️", "bg": "#0b1220", "dot": "#3A7BD5"},
-        "success": {"icon": "✅", "bg": "#07170b", "dot": "#16A34A"},
-        "warning": {"icon": "⚠️", "bg": "#1f1200", "dot": "#F59E0B"},
-        "error":   {"icon": "❌", "bg": "#2b0e0e", "dot": "#EF4444"},
+        "info":    {"icon": "ℹ️", "bg": "#0b1220", "dot": "#3A7BD5", "border": "#1E3A8A", "shadow": "#1E40AF"},
+        "success": {"icon": "✅", "bg": "#07170b", "dot": "#16A34A", "border": "#166534", "shadow": "#15803D"},
+        "warning": {"icon": "⚠️", "bg": "#1f1200", "dot": "#F59E0B", "border": "#92400E", "shadow": "#B45309"},
+        "error":   {"icon": "❌", "bg": "#2b0e0e", "dot": "#EF4444", "border": "#991B1B", "shadow": "#DC2626"},
     }
     st = estilos.get(tipo, estilos["info"])
 
@@ -111,32 +111,89 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
     toast = ctk.CTkToplevel(root)
     toast.overrideredirect(True)
     toast.attributes("-topmost", True)
-    toast.configure(fg_color=st["bg"])
-
-    wrapper = ctk.CTkFrame(toast, fg_color=st["bg"], corner_radius=16, width=TOAST_W-16, height=TOAST_H-16)
+    toast.configure(fg_color=st["bg"])  # Fondo principal sin borde
+    
+    # Frame principal con sombra sutil en la parte inferior
+    main_frame = ctk.CTkFrame(toast, fg_color=st["bg"], corner_radius=16)
+    main_frame.pack(fill="both", expand=True, padx=1, pady=1)
+    
+    # Frame de sombra inferior (simula sombra sutil)
+    shadow_height = 4
+    shadow_frame = ctk.CTkFrame(main_frame, fg_color=st["shadow"], height=shadow_height, 
+                               corner_radius=8)
+    shadow_frame.pack(side="bottom", fill="x", padx=8, pady=(0, 2))
+    shadow_frame.pack_propagate(False)
+    
+    # Frame interno para el contenido
+    wrapper = ctk.CTkFrame(main_frame, fg_color=st["bg"], corner_radius=14, 
+                          width=TOAST_W-12, height=TOAST_H-12)
     wrapper.pack_propagate(False)
-    wrapper.pack(fill="both", expand=False, padx=8, pady=8)
+    wrapper.pack(fill="both", expand=False, padx=6, pady=(6, 4))  # Más padding abajo para la sombra
 
-    icon_frame = ctk.CTkFrame(wrapper, fg_color=st["bg"], corner_radius=50, width=56, height=56)
+    # Frame del icono con círculo perfecto
+    icon_frame = ctk.CTkFrame(wrapper, fg_color=st["bg"], width=56, height=56)
     icon_frame.pack_propagate(False)
-    icon_frame.pack(side="left", padx=(8,12), pady=12)
+    icon_frame.pack(side="left", padx=(12, 16), pady=12)
 
+    # Canvas para el círculo perfectamente redondo
+    dot_size = 48  # Tamaño del círculo
     dot = tk.Canvas(icon_frame, width=56, height=56, highlightthickness=0, bg=st["bg"])
-    dot.create_oval(8, 8, 48, 48, fill=st["dot"], outline=st["dot"])
-    dot_text = dot.create_text(28, 28, text=st["icon"], font=("Segoe UI Emoji", 18))
+    
+    # Calcular posición para centrar perfectamente
+    circle_x1 = (56 - dot_size) / 2
+    circle_y1 = (56 - dot_size) / 2
+    circle_x2 = circle_x1 + dot_size
+    circle_y2 = circle_y1 + dot_size
+    
+    # Dibujar círculo perfectamente redondo
+    dot.create_oval(circle_x1, circle_y1, circle_x2, circle_y2, 
+                   fill=st["dot"], outline=st["dot"], width=0)
+    
+    # Calcular posición para centrar el emoji
+    text_x = 56 / 2
+    text_y = 56 / 2
+    
+    dot_text = dot.create_text(text_x, text_y, text=st["icon"], 
+                              font=("Segoe UI Emoji", 16),
+                              fill="#FFFFFF")
     dot.pack(fill="both", expand=True)
 
+    # Contenedor de texto
     text_container = ctk.CTkFrame(wrapper, fg_color=st["bg"], corner_radius=0)
-    text_container.pack(side="left", fill="both", expand=True, pady=12, padx=(0,8))
+    text_container.pack(side="left", fill="both", expand=True, pady=12, padx=(0, 12))
 
     if titulo:
-        lbl_title = ctk.CTkLabel(text_container, text=titulo, font=("Segoe UI", 12, "bold"), text_color="#FFFFFF", anchor="w")
-        lbl_title.pack(fill="x", pady=(0,2))
-        lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 11), text_color="#C7CCD1", wraplength=TOAST_W-140, anchor="w", justify="left")
+        lbl_title = ctk.CTkLabel(text_container, text=titulo, font=("Segoe UI", 12, "bold"), 
+                                text_color="#FFFFFF", anchor="w")
+        lbl_title.pack(fill="x", pady=(0, 2))
+        lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 11), 
+                              text_color="#C7CCD1", wraplength=TOAST_W-140, 
+                              anchor="w", justify="left")
         lbl_msg.pack(fill="both")
     else:
-        lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 12), text_color="#E6E9EE", wraplength=TOAST_W-140, anchor="w", justify="left")
+        lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 12), 
+                              text_color="#E6E9EE", wraplength=TOAST_W-140, 
+                              anchor="w", justify="left")
         lbl_msg.pack(fill="both")
+
+    # Función para cerrar la notificación al hacer click
+    def close_toast(e=None):
+        if toast.winfo_exists():
+            with _toast_lock:
+                if toast in _active_toasts:
+                    _active_toasts.remove(toast)
+            _animate_out_and_destroy(immediate=True)
+    
+    # Bind click para cerrar a todos los elementos
+    wrapper.bind("<Button-1>", close_toast)
+    text_container.bind("<Button-1>", close_toast)
+    lbl_msg.bind("<Button-1>", close_toast)
+    if titulo:
+        lbl_title.bind("<Button-1>", close_toast)
+    icon_frame.bind("<Button-1>", close_toast)
+    dot.bind("<Button-1>", close_toast)
+    main_frame.bind("<Button-1>", close_toast)
+    shadow_frame.bind("<Button-1>", close_toast)
 
     toast.update_idletasks()
 
@@ -151,7 +208,7 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
 
     def _animate_in():
         try:
-            steps = 6  # Menos pasos para mejor rendimiento
+            steps = 6
             geom = toast.geometry()
             parts = geom.split('+')
             base_x = int(parts[1]) if len(parts) > 1 else toast.winfo_x()
@@ -169,12 +226,13 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
                 except Exception:
                     pass
                 toast.update_idletasks()
-                time.sleep(0.02)  # Tiempo más consistente
+                time.sleep(0.02)
         except Exception:
             pass
 
-    def _animate_out_and_destroy():
-        time.sleep(duracion / 1000.0)
+    def _animate_out_and_destroy(immediate=False):
+        if not immediate:
+            time.sleep(duracion / 1000.0)
         try:
             for i in range(5):
                 alpha = max(0.0, 1 - (i + 1) / 5)
@@ -198,8 +256,10 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
             pass
 
     threading.Thread(target=_animate_in, daemon=True).start()
-    threading.Thread(target=_animate_out_and_destroy, daemon=True).start()
-
+    
+    # Solo aplicar cierre automático si no se hizo click
+    if not hasattr(toast, '_manually_closed'):
+        threading.Thread(target=_animate_out_and_destroy, daemon=True).start()
 # ANIMACIONES OPTIMIZADAS
 def simple_button_hover(button, is_enter=True):
     if is_enter:
@@ -758,7 +818,7 @@ def iniciar_proceso():
 
         # Selección de clínica
         try:
-            time.sleep(5)
+            time.sleep(3)
             pyautogui.typewrite(codigo_clinica, interval=0.1)
             time.sleep(2)
             x, y = pyautogui.position()
@@ -784,21 +844,19 @@ def iniciar_proceso():
             continue
 
         # Aplicar filtro
-        time.sleep(5)
+        time.sleep(3)
         if not (buscar_y_click("aplicar_filtro.png", "aplicar_filtro") or buscar_y_click("aplicar_filtro_en.png", "aplicar_filtro_en.png")):
             mostrar_toast("No se encontró el botón 'aplicar_filtro'.", tipo="warning", titulo="Botón no encontrado")
             continue
 
         # Añadir factura
-        time.sleep(5)
+        time.sleep(3)
         if not buscar_y_click("anadir.png", "anadir"):
             mostrar_toast("No se encontró el botón 'anadir.png'.", tipo="warning", titulo="Botón no encontrado")
             continue
-
-        # Seleccionar archivo PDF
-        time.sleep(8)
+        time.sleep(4)
         buscar_y_click("seleccionar_archivo.png", "seleccionar")
-        time.sleep(5)
+        time.sleep(1)
 
         # Buscar y seleccionar PDF correspondiente a esta factura
         try:
@@ -867,9 +925,9 @@ def iniciar_proceso():
 
         pyautogui_sleep = getattr(pyautogui, "sleep", None)
         if pyautogui_sleep:
-            pyautogui_sleep(13)
+            pyautogui_sleep(12)
         else:
-            time.sleep(13)
+            time.sleep(12)
 
         if not buscar_y_click("productos.png", "productos"):
             mostrar_toast("No se encontró 'productos.png'.", tipo="warning", titulo="Botón no encontrado")
@@ -888,19 +946,19 @@ def iniciar_proceso():
                 if not buscar_y_click("anadir.png", "añadir"):
                     mostrar_toast("No se encontró 'anadir.png'.", tipo="warning", titulo="Botón no encontrado")
                     raise Exception("boton_anadir_no_encontrado")
-                time.sleep(10)
+                time.sleep(11)
 
                 if not buscar_y_click("anadir_producto.png", "añadir_producto"):
                     mostrar_toast("No se encontró 'anadir_producto.png'.", tipo="warning", titulo="Botón no encontrado")
                     raise Exception("boton_anadir_producto_no_encontrado")
-                time.sleep(10)
+                time.sleep(11)
 
                 pyautogui.typewrite(codigo_producto)
-                time.sleep(4)
+                time.sleep(3)
                 x, y = pyautogui.position()
                 pyautogui.moveTo(x, y + 40, duration=0.5)
                 pyautogui.click()
-                time.sleep(2)
+                time.sleep(3)
 
                 if not buscar_y_click("cantidad.png", "cantidad"):
                     mostrar_toast("No se encontró 'cantidad.png'.", tipo="warning", titulo="Botón no encontrado")
