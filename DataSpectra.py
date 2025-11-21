@@ -14,6 +14,7 @@ import math
 # === CONFIGURACIÓN ===
 CARPETA_BOTONES = "Buttons"
 URL_TECFOOD = "https://food.teknisa.com//df/#/df_entrada#dfe11000_lancamento_entrada"
+URL_RETIRADA = "https://food.teknisa.com//pla/#/pla_medicao#pla02000_retirada_planejamento"  # NUEVA URL
 
 SUPABASE_URL = "https://ulboklgzjriatmaxzpsi.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsYm9rbGd6anJpYXRtYXh6cHNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3ODQxNDAsImV4cCI6MjA3ODM2MDE0MH0.gY6_K4JQoJxPZmdXMIbFZfiJAOdavbg8jDJW1rOUSPk"
@@ -25,34 +26,28 @@ df_facturas = pd.DataFrame()
 productos_por_factura = {}
 codigo_clinica = ""
 origen_datos = ""
-
-# -----------------------------
-# CONFIGURACIÓN DE CUSTOMTKINTER
-# -----------------------------
+archivo_retirada = None
+df_retirada = pd.DataFrame()
+unidad_cargada = ""
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
-
-# =========================
 # PALETA DE COLORES
-# =========================
-PRIMARY = "#3A7BD5"  # Azul suave
+
+PRIMARY = "#3A7BD5"
 PRIMARY_HOVER = "#5EA0FF"
-ACCENT = "#FFA726"  # Naranja cálido
+ACCENT = "#FFA726" 
 ACCENT_HOVER = "#FFB74D"
 CARD_BG = "#1C1E23"
 TEXT_MAIN = "#FFFFFF"
 TEXT_SECOND = "#B0B0B0"
 BG = "#0E0F12"
 
-# =========================
-# SISTEMA DE NOTIFICACIONES (MACOS "CRYSTAL" STYLE) - ESQUINA INFERIOR DERECHA
-# =========================
+# SISTEMA DE NOTIFICACIONES OPTIMIZADO
 
 _toast_lock = threading.Lock()
 _active_toasts = []
 
 def _position_toast_window(win, width=380, height=96, margin_x=24, margin_y=24, offset_index=0):
-    # posiciona en esquina inferior derecha relativa a la ventana principal (root)
     try:
         root_x = root.winfo_rootx()
         root_y = root.winfo_rooty()
@@ -66,25 +61,14 @@ def _position_toast_window(win, width=380, height=96, margin_x=24, margin_y=24, 
     win.geometry(f"{width}x{height}+{x}+{y}")
 
 def _reposition_toasts():
-    """
-    Recalcula la posición de todos los toasts activos y los coloca
-    de forma compacta desde abajo hacia arriba. Esto es instantáneo (sin animación).
-    """
     with _toast_lock:
         for idx, t in enumerate(list(_active_toasts)):
             try:
-                # Reposicionar usando el índice actual en la lista
                 _position_toast_window(t, width=t.winfo_width() or 360, height=t.winfo_height() or 100, offset_index=idx)
             except Exception:
                 pass
 
-def _slide_and_fade_in(win, start_offset=40, steps=12, delay=10):
-    """
-    Realiza una animación combinada slide-from-bottom + fade-in.
-    start_offset: píxeles para desplazamiento inicial vertical.
-    steps: cantidad de frames
-    delay: ms entre frames
-    """
+def _slide_and_fade_in(win, start_offset=40, steps=8, delay=15):
     try:
         geom = win.geometry()
         parts = geom.split('+')
@@ -94,10 +78,11 @@ def _slide_and_fade_in(win, start_offset=40, steps=12, delay=10):
         else:
             base_x = win.winfo_x()
             base_y = win.winfo_y()
+        
         for i in range(steps):
             frac = (i + 1) / steps
             y = int(base_y + start_offset * (1 - frac))
-            alpha = max(0.0, min(1.0, frac))
+            alpha = frac
             try:
                 win.geometry(f"{win.winfo_width()}x{win.winfo_height()}+{base_x}+{y}")
                 win.attributes("-alpha", alpha)
@@ -109,12 +94,6 @@ def _slide_and_fade_in(win, start_offset=40, steps=12, delay=10):
         pass
 
 def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
-    """
-    Notificación estilo C (Dynamic Island) con icono circular.
-    tipo = 'info' | 'success' | 'warning' | 'error'
-    duracion en ms
-    titulo: texto opcional en negrita arriba del mensaje
-    """
     estilos = {
         "info":    {"icon": "ℹ️", "bg": "#0b1220", "dot": "#3A7BD5"},
         "success": {"icon": "✅", "bg": "#07170b", "dot": "#16A34A"},
@@ -123,7 +102,6 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
     }
     st = estilos.get(tipo, estilos["info"])
 
-    # fixed dimensions to avoid variable heights/widths causing cut widgets
     TOAST_W = 360
     TOAST_H = 100
 
@@ -133,26 +111,21 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
     toast = ctk.CTkToplevel(root)
     toast.overrideredirect(True)
     toast.attributes("-topmost", True)
-    # ensure consistent background
     toast.configure(fg_color=st["bg"])
 
-    # main wrapper with fixed size
     wrapper = ctk.CTkFrame(toast, fg_color=st["bg"], corner_radius=16, width=TOAST_W-16, height=TOAST_H-16)
     wrapper.pack_propagate(False)
     wrapper.pack(fill="both", expand=False, padx=8, pady=8)
 
-    # left circular icon (type B) - use a small frame with circle appearance
     icon_frame = ctk.CTkFrame(wrapper, fg_color=st["bg"], corner_radius=50, width=56, height=56)
     icon_frame.pack_propagate(False)
     icon_frame.pack(side="left", padx=(8,12), pady=12)
 
     dot = tk.Canvas(icon_frame, width=56, height=56, highlightthickness=0, bg=st["bg"])
     dot.create_oval(8, 8, 48, 48, fill=st["dot"], outline=st["dot"])
-    # place emoji centered on top of dot
     dot_text = dot.create_text(28, 28, text=st["icon"], font=("Segoe UI Emoji", 18))
     dot.pack(fill="both", expand=True)
 
-    # text container
     text_container = ctk.CTkFrame(wrapper, fg_color=st["bg"], corner_radius=0)
     text_container.pack(side="left", fill="both", expand=True, pady=12, padx=(0,8))
 
@@ -165,54 +138,51 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
         lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 12), text_color="#E6E9EE", wraplength=TOAST_W-140, anchor="w", justify="left")
         lbl_msg.pack(fill="both")
 
-    # Force layout update so sizes are computed before positioning / animating
     toast.update_idletasks()
 
-    # Position with fixed size and computed offset
     _position_toast_window(toast, width=TOAST_W, height=TOAST_H, offset_index=offset_index)
     try:
         toast.attributes("-alpha", 0.0)
     except Exception:
         pass
 
-    # register
     with _toast_lock:
         _active_toasts.append(toast)
 
-    # animate in (pop + fade)
     def _animate_in():
         try:
-            # simple pop: start slightly scaled via y offset and increase alpha
-            steps = 10
+            steps = 6  # Menos pasos para mejor rendimiento
             geom = toast.geometry()
             parts = geom.split('+')
             base_x = int(parts[1]) if len(parts) > 1 else toast.winfo_x()
             base_y = int(parts[2]) if len(parts) > 2 else toast.winfo_y()
+            
             for i in range(steps):
                 frac = (i + 1) / steps
-                y = int(base_y + int((1 - frac) * 18))
+                y_offset = int((1 - frac) * 20)
+                y = base_y + y_offset
                 alpha = frac
+                
                 try:
                     toast.geometry(f"{TOAST_W}x{TOAST_H}+{base_x}+{y}")
                     toast.attributes("-alpha", alpha)
                 except Exception:
                     pass
                 toast.update_idletasks()
-                time.sleep(0.01)
+                time.sleep(0.02)  # Tiempo más consistente
         except Exception:
             pass
 
     def _animate_out_and_destroy():
         time.sleep(duracion / 1000.0)
         try:
-            # fade out
-            for i in range(8):
-                alpha = max(0.0, 1 - (i + 1) / 8)
+            for i in range(5):
+                alpha = max(0.0, 1 - (i + 1) / 5)
                 try:
                     toast.attributes("-alpha", alpha)
                 except Exception:
                     pass
-                time.sleep(0.01)
+                time.sleep(0.03)
         except Exception:
             pass
         try:
@@ -222,7 +192,6 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
         with _toast_lock:
             if toast in _active_toasts:
                 _active_toasts.remove(toast)
-        # instant reposition remaining toasts
         try:
             _reposition_toasts()
         except Exception:
@@ -231,29 +200,89 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
     threading.Thread(target=_animate_in, daemon=True).start()
     threading.Thread(target=_animate_out_and_destroy, daemon=True).start()
 
-# Confirmación centrada con tamaño fijo
+# ANIMACIONES OPTIMIZADAS
+def simple_button_hover(button, is_enter=True):
+    if is_enter:
+        if button == btn_excel:
+            button.configure(fg_color=ACCENT_HOVER)
+        elif button == btn_supabase:
+            button.configure(fg_color=PRIMARY_HOVER)
+        elif button == btn_iniciar and button.cget("state") == "normal":
+            button.configure(fg_color=PRIMARY_HOVER)
+        elif button == btn_volver:
+            button.configure(fg_color="#7AB8FF")
+        elif button == btn_close or button == btn_exit_menu:
+            button.configure(fg_color="#FF6B6B")
+        elif button == btn_cargar_retirada:
+            button.configure(fg_color=ACCENT_HOVER)
+        elif button == btn_iniciar_retirada:
+            button.configure(fg_color=PRIMARY_HOVER)
+    else:
+        if button == btn_excel:
+            button.configure(fg_color=ACCENT)
+        elif button == btn_supabase:
+            button.configure(fg_color=PRIMARY)
+        elif button == btn_iniciar and button.cget("state") == "normal":
+            button.configure(fg_color=PRIMARY)
+        elif button == btn_volver:
+            button.configure(fg_color="#5EA0FF")
+        elif button == btn_close or button == btn_exit_menu:
+            button.configure(fg_color="#FF5252")
+        elif button == btn_cargar_retirada:
+            button.configure(fg_color=ACCENT)
+        elif button == btn_iniciar_retirada:
+            button.configure(fg_color=PRIMARY)
+
+def simple_item_hover(item, is_enter=True):
+    if is_enter:
+        item.configure(fg_color="#1E2025")
+    else:
+        item.configure(fg_color="#141518")
+
+def quick_pulse_animation(widget, pulse_color, duration=0.3):
+    def _pulse():
+        try:
+            original_color = widget.cget("fg_color")
+            widget.configure(fg_color=pulse_color)
+            time.sleep(duration)
+            widget.configure(fg_color=original_color)
+        except Exception:
+            pass
+    threading.Thread(target=_pulse, daemon=True).start()
+
+def fade_transition(widget, target_alpha, duration=0.2):
+    def _fade():
+        try:
+            steps = 4
+            current_alpha = widget.attributes("-alpha") if widget.attributes("-alpha") else 1.0
+            
+            for i in range(steps):
+                progress = (i + 1) / steps
+                alpha = current_alpha + (target_alpha - current_alpha) * progress
+                widget.attributes("-alpha", alpha)
+                time.sleep(duration / steps)
+        except Exception:
+            widget.attributes("-alpha", target_alpha)
+    
+    threading.Thread(target=_fade, daemon=True).start()
+
+# Confirmación cerrar app OPTIMIZADA
 def confirmar_salida(titulo="Confirmar salida", mensaje="¿Deseas salir de la aplicación?"):
     result = {"value": False}
-    width, height = 400, 140   # <-- tamaño fijo
+    width, height = 400, 140
 
     confirm = ctk.CTkToplevel(root)
     confirm.overrideredirect(True)
     confirm.attributes("-topmost", True)
     confirm.configure(fg_color="#0f1724")
-
-    # -----------------------------
-    # POSICIÓN CENTRADA EN PANTALLA
-    # -----------------------------
+    
     confirm.update_idletasks()
     screen_w = confirm.winfo_screenwidth()
     screen_h = confirm.winfo_screenheight()
     x = (screen_w // 2) - (width // 2)
     y = (screen_h // 2) - (height // 2)
     confirm.geometry(f"{width}x{height}+{x}+{y}")
-
-    # -----------------------------
-    # DISEÑO DE LA VENTANA
-    # -----------------------------
+    
     wrapper = ctk.CTkFrame(confirm, fg_color="#0f1724", corner_radius=14)
     wrapper.pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -282,11 +311,13 @@ def confirmar_salida(titulo="Confirmar salida", mensaje="¿Deseas salir de la ap
 
     def on_confirm():
         result["value"] = True
-        confirm.destroy()
+        fade_transition(confirm, 0.0, 0.15)
+        confirm.after(150, confirm.destroy)
 
     def on_cancel():
         result["value"] = False
-        confirm.destroy()
+        fade_transition(confirm, 0.0, 0.15)
+        confirm.after(150, confirm.destroy)
 
     btn_cancel = ctk.CTkButton(
         btn_frame,
@@ -307,39 +338,162 @@ def confirmar_salida(titulo="Confirmar salida", mensaje="¿Deseas salir de la ap
         hover_color="#EF4444"
     )
     btn_ok.pack(side="right")
-
-    # -----------------------------
-    # FADE IN
-    # -----------------------------
+    
     try:
         confirm.attributes("-alpha", 0.0)
     except Exception:
         pass
 
-    def _fade_in_confirm():
-        try:
-            steps = 12
-            for i in range(steps):
-                alpha = (i + 1) / steps
-                try:
-                    confirm.attributes("-alpha", alpha)
-                except Exception:
-                    pass
-                time.sleep(0.01)
-        except Exception:
-            pass
-
-    threading.Thread(target=_fade_in_confirm, daemon=True).start()
+    # Fade in rápido
+    fade_transition(confirm, 1.0, 0.15)
 
     confirm.wait_window()
     return result["value"]
 
-# =========================
-# FUNCIONES AUXILIARES (ORIGINALES) - NO TOCAR LÓGICA
-# =========================
+# ========= NUEVAS FUNCIONES PARA RETIRADA =========
+
+def cargar_datos_retirada():
+    archivo = filedialog.askopenfilename(
+        title="Seleccionar archivo Excel de Retirada",
+        filetypes=[("Archivos Excel", "*.xlsx *.xls")],
+    )
+    if not archivo:
+        mostrar_toast("No se seleccionó ningún archivo.", tipo="warning", titulo="Aviso")
+        return
+
+    global archivo_retirada, df_retirada, unidad_cargada
+    archivo_retirada = archivo
+
+    try:
+        df = pd.read_excel(archivo, dtype=str).fillna("")
+        columnas_requeridas = ["Codigo", "Nombre del Producto", "Cantidad", "Valor total", "Inventario", "Unidad"]
+        for col in columnas_requeridas:
+            if col not in df.columns:
+                mostrar_toast(f"Falta la columna '{col}' en el archivo.", tipo="error", titulo="Error de formato")
+                return
+        df_retirada = df
+        unidades = df["Unidad"].dropna().unique()
+        if len(unidades) > 0:
+            unidad_completa = str(unidades[0]).strip()
+            codigo_unidad = "".join([c for c in unidad_completa if c.isdigit()])[:4]
+            if len(codigo_unidad) == 4:
+                unidad_cargada = codigo_unidad
+            else:
+                unidad_cargada = "0000"
+        else:
+            unidad_completa = "No especificada"
+            unidad_cargada = "0000"
+        
+        # Corregir valores negativos en inventario
+        for index, row in df_retirada.iterrows():
+            inventario_str = str(row["Inventario"]).strip()
+            try:
+                # Convertir a número y tomar valor absoluto si es negativo
+                inventario_val = float(inventario_str)
+                if inventario_val < 0:
+                    df_retirada.at[index, "Inventario"] = str(abs(inventario_val))
+            except (ValueError, TypeError):
+                pass
+        
+        actualizar_tabla_retirada()
+        actualizar_info_retirada(unidad_completa)
+        
+        try:
+            btn_iniciar_retirada.configure(state="normal")
+            quick_pulse_animation(btn_iniciar_retirada, "#4CAF50")
+        except Exception:
+            pass
+        
+        mostrar_toast("Archivo de retirada cargado correctamente ✅", tipo="success", titulo="Éxito")
+        print(f"📊 Datos de retirada cargados: {len(df_retirada)} registros")
+        print(f"🏥 Unidad cargada: {unidad_completa} (Código: {unidad_cargada})")
+
+    except Exception as e:
+        mostrar_toast(f"No se pudo leer el archivo:\n{e}", tipo="error", titulo="Error")
+
+def actualizar_info_retirada(unidad_completa=""):
+    try:
+        nombre_archivo = os.path.basename(archivo_retirada) if archivo_retirada else "Ningún archivo cargado"
+        lbl_info_retirada.configure(text=f"Archivo cargado: {nombre_archivo}")
+        lbl_unidad_retirada.configure(text=f"Unidad Cargada: {unidad_completa}")
+    except Exception as e:
+        print(f"Error actualizando info retirada: {e}")
+
+def actualizar_tabla_retirada():
+    for row in tree_retirada.get_children():
+        tree_retirada.delete(row)
+    
+    if not df_retirada.empty:
+        for _, fila in df_retirada.iterrows():
+            valores = [
+                fila["Codigo"], 
+                fila["Nombre del Producto"], 
+                fila["Cantidad"], 
+                fila["Valor total"], 
+                fila["Inventario"]
+            ]
+            tree_retirada.insert("", "end", values=valores)
+
+def iniciar_proceso_retirada():
+    if df_retirada.empty:
+        mostrar_toast("Primero carga un archivo de retirada.", tipo="error", titulo="Error")
+        return
+
+    print(f"🏁 Iniciando proceso de retirada con {len(df_retirada)} items...")
+    mostrar_toast("Iniciando proceso de retirada...", tipo="info", titulo="Retirada")
+    
+    def _proceso_retirada():
+        try:
+            print("🔗 Abriendo sistema de retirada en Edge...")
+            subprocess.Popen(["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", URL_RETIRADA])
+            time.sleep(20)
+            
+            #================================== PROCESO FUNCION #1 ================
+            
+            print("🔧 Ejecutando proceso de retirada...")
+            
+            # Simulación de procesamiento de cada item
+            for index, item in df_retirada.iterrows():
+                codigo = str(item["Codigo"]).strip()
+                producto = str(item["Nombre del Producto"]).strip()
+                cantidad = str(item["Cantidad"]).strip()
+                valorTotal = str(item["Valor total"]).strip()
+                inventario = str(item["Inventario"]).strip()
+                
+                print(f"📦 Procesando retirada {index+1}/{len(df_retirada)}: {producto}")
+                print(f"   Código: {codigo}, Cantidad: {cantidad}, Inventario: {inventario}")
+                if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6):
+                    mostrar_toast("No se encontró el botón unidad_select.png", tipo="warning", titulo="Botón no encontrado")
+                    continue
+                
+                try:
+                    time.sleep(1)
+                    pyautogui.typewrite(unidad_cargada)
+                    time.sleep(5)
+                    print(f"✅ Unidad {unidad_cargada} seleccionada correctamente.")
+                except Exception as e:
+                    print("Error al seleccionar unidad:", e)
+                    continue
+                pyautogui.press("tab")
+                time.sleep(0.5)
+                
+            
+            print("✅ Proceso de retirada completado")
+            mostrar_toast("Proceso de retirada completado ✅", tipo="success", titulo="Éxito")
+            
+        except Exception as e:
+            print(f"❌ Error en proceso de retirada: {e}")
+            mostrar_toast(f"Error en proceso de retirada:\n{e}", tipo="error", titulo="Error")
+        finally:
+            # Reactivar botón
+            root.after(0, lambda: btn_iniciar_retirada.configure(state="normal"))
+    btn_iniciar_retirada.configure(state="disabled")
+    threading.Thread(target=_proceso_retirada, daemon=True).start()
+# ========= FIN NUEVAS FUNCIONES=======================================
+
+# FUNCIONES AUXILIARES ORIGINALES 
 
 def buscar_y_click(imagen, nombre, confianza=0.9, intentos=3, esperar=5):
-    """Busca una imagen en pantalla con varios intentos antes de fallar."""
     for i in range(intentos):
         print(f"🔎 Buscando botón '{nombre}' (Intento {i+1}/{intentos})...")
         try:
@@ -358,9 +512,7 @@ def buscar_y_click(imagen, nombre, confianza=0.9, intentos=3, esperar=5):
     print(f"❌ No se encontró el botón '{nombre}'.")
     return False
 
-
 def cargar_datos_desde_supabase():
-    """Carga las facturas y productos directamente desde Supabase."""
     global df_facturas, productos_por_factura, codigo_clinica, origen_datos
 
     try:
@@ -383,12 +535,10 @@ def cargar_datos_desde_supabase():
         facturas = []
         productos_por_factura = {}
 
-        # Obtener el código de clínica desde la primera factura
         codigo_clinica = str(
             facturas_data.data[0].get("codigo_clinica", "0000")
         ).strip()
 
-        # --- Construir tabla de facturas ---
         for f in facturas_data.data:
             facturas.append({
             "ID_Factura": str(f["id"]),
@@ -399,10 +549,8 @@ def cargar_datos_desde_supabase():
         })
 
 
-            # Inicializar lista vacía de productos por número de factura
             productos_por_factura[numero_factura] = []
 
-        # --- Asociar productos con sus facturas usando factura_id ---
         facturas_por_id = {
             str(f["id"]).strip(): str(f["numero_factura"]).strip()
             for f in facturas_data.data
@@ -415,7 +563,7 @@ def cargar_datos_desde_supabase():
 
             numero_factura = facturas_por_id.get(factura_id)
             if not numero_factura:
-                continue  # Si no hay coincidencia, se omite
+                continue 
 
             if numero_factura not in productos_por_factura:
                 productos_por_factura[numero_factura] = []
@@ -429,11 +577,9 @@ def cargar_datos_desde_supabase():
                 }
             )
 
-        # --- Convertir lista de facturas en DataFrame ---
         df_facturas = pd.DataFrame(facturas)
         origen_datos = "supabase"
 
-        # --- Mostrar conteo y depuración ---
         print(f"✅ Facturas cargadas: {len(facturas)}")
         print("✅ Productos agrupados por factura:")
         for k, v in productos_por_factura.items():
@@ -443,6 +589,8 @@ def cargar_datos_desde_supabase():
         actualizar_tabla_facturas()
         try:
             btn_iniciar.configure(state="normal")
+            # Animación de confirmación rápida
+            quick_pulse_animation(btn_iniciar, "#4CAF50")
         except Exception:
             pass
         try:
@@ -455,9 +603,7 @@ def cargar_datos_desde_supabase():
     except Exception as e:
         mostrar_toast(f"No se pudo conectar a Supabase:\n{e}", tipo="error", titulo="Error")
 
-
 def cargar_datos_desde_excel():
-    """Carga facturas y productos desde Excel."""
     archivo = filedialog.askopenfilename(
         title="Seleccionar archivo Excel",
         filetypes=[("Archivos Excel", "*.xlsx *.xls")],
@@ -529,6 +675,7 @@ def cargar_datos_desde_excel():
         actualizar_tabla_facturas()
         try:
             btn_iniciar.configure(state="normal")
+            quick_pulse_animation(btn_iniciar, "#4CAF50")
         except Exception:
             pass
         try:
@@ -540,17 +687,13 @@ def cargar_datos_desde_excel():
     except Exception as e:
         mostrar_toast(f"No se pudo leer el archivo:\n{e}", tipo="error", titulo="Error")
 
-
 def actualizar_tabla_facturas():
-
     for row in tree_facturas.get_children():
         tree_facturas.delete(row)
     for _, fila in df_facturas.iterrows():
         tree_facturas.insert("", "end", values=list(fila))
 
-
 def mostrar_productos(event):
-
     item = tree_facturas.selection()
     if not item:
         return
@@ -584,9 +727,7 @@ def mostrar_productos(event):
     print(f"🧾 Factura seleccionada: {numero_factura}")
     print(f"📦 Productos encontrados: {len(productos)}")
 
-
 def iniciar_proceso():
-    """Usa los datos cargados (de Excel o Supabase). Recorre todas las facturas en df_facturas."""
     if df_facturas.empty:
         mostrar_toast("Primero carga datos desde Excel o Supabase.", tipo="error", titulo="Error")
         return
@@ -606,16 +747,13 @@ def iniciar_proceso():
         print(f"\n\n🔁 Procesando factura {index+1}/{len(df_facturas)} → {numero_factura}")
         print(f"   Empresa: {empresa}  NIT: {nit}  Productos: {len(productos)}")
 
-        # Si no hay productos y quieres SALTAR facturas vacías
         if not productos:
             print(f"⚠️ Sin productos para {numero_factura}, se salta.")
             continue
         
 
-        # --- Buscar y seleccionar unidad (cada factura volvemos a buscarla) ---
         if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6):
             mostrar_toast("No se encontró el botón unidad_select.png", tipo="warning", titulo="Botón no encontrado")
-            # saltamos esta factura y continuamos con la siguiente
             continue
 
         # Selección de clínica
@@ -657,7 +795,7 @@ def iniciar_proceso():
             mostrar_toast("No se encontró el botón 'anadir.png'.", tipo="warning", titulo="Botón no encontrado")
             continue
 
-        # Seleccionar archivo PDF (explorador)
+        # Seleccionar archivo PDF
         time.sleep(8)
         buscar_y_click("seleccionar_archivo.png", "seleccionar")
         time.sleep(5)
@@ -739,7 +877,7 @@ def iniciar_proceso():
 
         time.sleep(6)
 
-        # Agregar productos (si hay)
+        # Agregar productos
         for i, producto in enumerate(productos):
             try:
                 codigo_producto = str(producto["Código Producto"]).strip()
@@ -817,11 +955,7 @@ def iniciar_proceso():
                 pass
     print("🏁 Proceso completado para todas las facturas.")
 
-# =========================
-# INTERFAZ MODERNA CON CUSTOMTKINTER (CON PANTALLA PRINCIPAL + INTERFAZ DE FACTURAS)
-# =========================
-
-# Si ya existe `root` en el archivo, se reutiliza; si no, lo creamos.
+# INTERFAZ CON CUSTOMTKINTER
 try:
     root
 except NameError:
@@ -830,22 +964,17 @@ except NameError:
     root.attributes("-fullscreen", True)
     root.configure(fg_color="#0E0F12")
 
-# =========================
 # Sistema simple de multipantallas
-# =========================
 contenedor = ctk.CTkFrame(root, fg_color=BG)
 contenedor.pack(fill="both", expand=True)
 
 pantallas = {}
 def mostrar_pantalla(nombre):
-    """Esconde todas las pantallas y muestra la solicitada."""
     for p in pantallas.values():
         p.pack_forget()
     pantallas[nombre].pack(fill="both", expand=True)
 
-# =========================
-# PANTALLA PRINCIPAL (MENÚ - LISTA ELEGANTE)
-# =========================
+# PANTALLA PRINCIPAL
 pantalla_menu = ctk.CTkFrame(contenedor, fg_color=BG)
 pantallas["menu"] = pantalla_menu
 
@@ -856,11 +985,10 @@ header_menu.pack(fill="x", padx=20, pady=16)
 titulo_menu = ctk.CTkLabel(header_menu, text="DataSpectra — Panel Principal", font=("Segoe UI", 22, "bold"), text_color=TEXT_MAIN)
 titulo_menu.pack(side="left", padx=18, pady=10)
 
-# Exit button (reemplazado por confirmación interactiva)
+# Exit button
 def cerrar_app_wrapper():
     if confirmar_salida("Salir", "¿Deseas cerrar la aplicación?"):
         mostrar_toast("Cerrando aplicación...", tipo="info", titulo="Cerrando")
-        # ensure UI updates happen on main thread
         root.after(300, root.destroy)
     else:
         mostrar_toast("Salida cancelada", tipo="info", titulo="Cancelado")
@@ -870,6 +998,10 @@ btn_exit_menu = ctk.CTkButton(header_menu, text="✕", width=44, height=38, corn
                               command=cerrar_app_wrapper)
 btn_exit_menu.pack(side="right", padx=14, pady=8)
 
+# Añadir hover simple
+btn_exit_menu.bind("<Enter>", lambda e: simple_button_hover(btn_exit_menu, True))
+btn_exit_menu.bind("<Leave>", lambda e: simple_button_hover(btn_exit_menu, False))
+
 content_menu = ctk.CTkScrollableFrame(pantalla_menu, fg_color=BG, corner_radius=0)
 content_menu.pack(fill="both", expand=True, padx=20, pady=(10,20))
 
@@ -878,7 +1010,7 @@ intro.pack(pady=(12,6))
 sub = ctk.CTkLabel(content_menu, text="Funciones disponibles (las futuras aparecerán habilitadas cuando el administrador las implemente).", font=("Segoe UI", 15), text_color=TEXT_SECOND)
 sub.pack(pady=(0,12))
 
-# Lista vertical: estilo elegante (3 elementos)
+# Lista vertical
 def crear_item_lista(parent, icon, titulo, subtitulo, command=None, enabled=True):
     item = ctk.CTkFrame(parent, fg_color="#141518", corner_radius=16)
     item.pack(fill="x", padx=12, pady=8)
@@ -895,22 +1027,25 @@ def crear_item_lista(parent, icon, titulo, subtitulo, command=None, enabled=True
     lbl_sub = ctk.CTkLabel(item, text=subtitulo, font=("Segoe UI", 11), text_color=TEXT_SECOND, fg_color="#141518")
     lbl_sub.place(x=80, y=44)
 
-    # Chevron / indicador
+    #indicador
     lbl_chev = ctk.CTkLabel(item, text="›", font=("Segoe UI", 22, "bold"), text_color="#8F9AA6", fg_color="#141518")
     lbl_chev.place(relx=0.96, rely=0.5, anchor="e")
 
     # Hover
     def on_enter(e):
-        item.configure(fg_color="#17191C")
+        if enabled:
+            simple_item_hover(item, True)
     def on_leave(e):
-        item.configure(fg_color="#141518")
-    item.bind("<Enter>", on_enter); item.bind("<Leave>", on_leave)
+        if enabled:
+            simple_item_hover(item, False)
+    item.bind("<Enter>", on_enter)
+    item.bind("<Leave>", on_leave)
 
-    # Click (solo si enabled)
+    # Click
     if enabled and callable(command):
         def onclick(e=None):
             try:
-                # Notificación elegante al pulsar item
+                quick_pulse_animation(item, ACCENT)
                 mostrar_toast(f"Abriendo: {titulo}", tipo="info", titulo="Abriendo Operación")
                 command()
             except Exception as err:
@@ -921,16 +1056,15 @@ def crear_item_lista(parent, icon, titulo, subtitulo, command=None, enabled=True
         lbl_sub.bind("<Button-1>", onclick)
         lbl_chev.bind("<Button-1>", onclick)
     else:
-        # deshabilitado visual
         lbl_tit.configure(text_color="#6F777E")
         lbl_sub.configure(text_color="#4F5559")
         lbl_chev.configure(text_color="#3B4043")
 
     return item
 
-# Crear 3 items: 1 funcional, 2 futuras (deshabilitadas)
+# Crear 3 items
 crear_item_lista(content_menu, "🧾", "Cargar facturas", "Automatiza la carga de facturas en TecFood", command=lambda: mostrar_pantalla("facturas"), enabled=True)
-crear_item_lista(content_menu, "✨", "Función futura #1", "Implementación próxima", command=None, enabled=False)
+crear_item_lista(content_menu, "📦", "Proceso automatizado: Retirada", "Automatiza procesos de retirada y planificación", command=lambda: mostrar_pantalla("retirada"), enabled=True)
 crear_item_lista(content_menu, "⚙️", "Función futura #2", "Implementación posterior", command=None, enabled=False)
 
 # footer pequeño
@@ -938,12 +1072,12 @@ footer_menu = ctk.CTkLabel(content_menu, text="Desarrollado por Area de desarrol
 footer_menu.pack(pady=18)
 
 # =========================
-# PANTALLA DE FACTURAS (TU INTERFAZ ACTUAL, MOVIDA A UNA PANTALLA)
+# PANTALLA DE FACTURAS
 # =========================
 pantalla_facturas = ctk.CTkFrame(contenedor, fg_color=BG)
 pantallas["facturas"] = pantalla_facturas
 
-# === HEADER SUPERIOR (DE LA PANTALLA DE FACTURAS) ===
+# === HEADER SUPERIOR ===
 header = ctk.CTkFrame(pantalla_facturas, fg_color=CARD_BG, corner_radius=20)
 header.pack(fill="x", padx=20, pady=12)
 
@@ -955,7 +1089,7 @@ lbl_titulo = ctk.CTkLabel(
 )
 lbl_titulo.pack(side="left", padx=20, pady=12)
 
-# Botón volver (lleva al menú principal)
+# Botón volver
 def _on_volver():
     mostrar_toast("Volviendo al menú", tipo="info", titulo="Volver")
     mostrar_pantalla("menu")
@@ -973,7 +1107,11 @@ btn_volver = ctk.CTkButton(
 )
 btn_volver.pack(side="right", padx=10, pady=10)
 
-# Botón cerrar original reemplazado por confirmación interactiva
+# Añadir hover simple
+btn_volver.bind("<Enter>", lambda e: simple_button_hover(btn_volver, True))
+btn_volver.bind("<Leave>", lambda e: simple_button_hover(btn_volver, False))
+
+# Botón cerrar
 def cerrar_app_facturas():
     if confirmar_salida("Salir", "¿Deseas cerrar la aplicación?"):
         mostrar_toast("Cerrando aplicación...", tipo="info", titulo="Cerrando")
@@ -994,7 +1132,11 @@ btn_close = ctk.CTkButton(
 )
 btn_close.pack(side="right", padx=10, pady=10)
 
-# === CUERPO PRINCIPAL (scrollable) ===
+# Añadir hover simple
+btn_close.bind("<Enter>", lambda e: simple_button_hover(btn_close, True))
+btn_close.bind("<Leave>", lambda e: simple_button_hover(btn_close, False))
+
+# === CUERPO PRINCIPAL ===
 main_frame = ctk.CTkScrollableFrame(pantalla_facturas, fg_color=BG, corner_radius=0)
 main_frame.pack(fill="both", expand=True, padx=30, pady=10)
 
@@ -1002,9 +1144,9 @@ main_frame.pack(fill="both", expand=True, padx=30, pady=10)
 btn_frame = ctk.CTkFrame(main_frame, fg_color=CARD_BG, corner_radius=25)
 btn_frame.pack(pady=18)
 
-# envuelvo las funciones originales para mostrar notificación al pulsar
 def _on_cargar_excel():
     mostrar_toast("Selecciona un archivo para cargar", tipo="info", titulo="Cargar Excel")
+    quick_pulse_animation(btn_excel, "#FFD54F")
     try:
         cargar_datos_desde_excel()
     except Exception as e:
@@ -1012,6 +1154,7 @@ def _on_cargar_excel():
 
 def _on_cargar_supabase():
     mostrar_toast("Cargando desde Supabase...", tipo="info", titulo="Supabase")
+    quick_pulse_animation(btn_supabase, "#4FC3F7")
     try:
         cargar_datos_desde_supabase()
     except Exception as e:
@@ -1042,6 +1185,11 @@ btn_supabase = ctk.CTkButton(
     width=250,
 )
 btn_supabase.pack(side="left", padx=12, pady=12)
+
+btn_excel.bind("<Enter>", lambda e: simple_button_hover(btn_excel, True))
+btn_excel.bind("<Leave>", lambda e: simple_button_hover(btn_excel, False))
+btn_supabase.bind("<Enter>", lambda e: simple_button_hover(btn_supabase, True))
+btn_supabase.bind("<Leave>", lambda e: simple_button_hover(btn_supabase, False))
 
 # --- CÓDIGO DE CLÍNICA ---
 lbl_codigo = ctk.CTkLabel(
@@ -1079,7 +1227,6 @@ for col in ("ID_Factura", "N° Factura", "Fecha", "Empresa", "NIT"):
     tree_facturas.heading(col, text=col)
     tree_facturas.column(col, anchor="center", width=170)
 tree_facturas.pack(fill="x", padx=12, pady=8)
-# conserva el binding a la función mostrar_productos si existe
 if callable(globals().get("mostrar_productos")):
     tree_facturas.bind("<Double-1>", mostrar_productos)
 
@@ -1120,25 +1267,25 @@ style.configure(
 style.map("Treeview", background=[("selected", PRIMARY_HOVER)])
 
 # --- BOTÓN INICIAR ---
-# Para evitar que la UI se congele, ejecutamos iniciar_proceso en un hilo aparte
-# y usamos root.after para actualizar la GUI de forma segura.
+
 def _run_iniciar_proceso_thread():
     try:
-        # desactivar botón en la UI desde hilo principal
         root.after(0, lambda: btn_iniciar.configure(state="disabled"))
         root.after(0, lambda: mostrar_toast("Proceso iniciado en background", tipo="info", titulo="Proceso"))
         iniciar_proceso()
-        # al terminar, reactivar botón y notificar en hilo principal
         root.after(0, lambda: btn_iniciar.configure(state="normal"))
         root.after(0, lambda: mostrar_toast("Proceso completado ✅", tipo="success", titulo="Completado"))
+        # Animación de éxito rápida
+        root.after(0, lambda: quick_pulse_animation(btn_iniciar, "#4CAF50"))
     except Exception as e:
-        # notificar error en hilo principal
         root.after(0, lambda: mostrar_toast(f"Error en proceso: {e}", tipo="error", titulo="Error"))
         root.after(0, lambda: btn_iniciar.configure(state="normal"))
+        # Animación de error rápida
+        root.after(0, lambda: quick_pulse_animation(btn_iniciar, "#F44336"))
 
 def _on_iniciar_proceso():
     mostrar_toast("Iniciando proceso...", tipo="info", titulo="Iniciar")
-    # start thread
+    quick_pulse_animation(btn_iniciar, "#FFD54F")
     t = threading.Thread(target=_run_iniciar_proceso_thread, daemon=True)
     t.start()
 
@@ -1157,15 +1304,208 @@ btn_iniciar = ctk.CTkButton(
 )
 btn_iniciar.pack(pady=16)
 
-# --- FOOTER (Opcional) ---
+btn_iniciar.bind("<Enter>", lambda e: simple_button_hover(btn_iniciar, True))
+btn_iniciar.bind("<Leave>", lambda e: simple_button_hover(btn_iniciar, False))
+
+# --- FOOTER ---
 footer = ctk.CTkFrame(pantalla_facturas, fg_color=CARD_BG, corner_radius=0)
 footer.pack(fill="x", side="bottom")
 lbl_footer = ctk.CTkLabel(footer, text="Desarrollado por Area de desarrollo de Healthy", font=("Segoe UI", 11), text_color=TEXT_SECOND)
 lbl_footer.pack(pady=8)
 
 # =========================
-# MOSTRAR PANTALLA INICIAL (MENÚ)
+# PANTALLA DE Funcion Nueva #1
 # =========================
+pantalla_retirada = ctk.CTkFrame(contenedor, fg_color=BG)
+pantallas["retirada"] = pantalla_retirada
+
+# === HEADER SUPERIOR ===
+header_retirada = ctk.CTkFrame(pantalla_retirada, fg_color=CARD_BG, corner_radius=20)
+header_retirada.pack(fill="x", padx=20, pady=12)
+
+lbl_titulo_retirada = ctk.CTkLabel(
+    header_retirada,
+    text="Proceso automatizado: Retirada (Planificación)",
+    font=("Segoe UI", 24, "bold"),
+    text_color=TEXT_MAIN,
+)
+lbl_titulo_retirada.pack(side="left", padx=20, pady=12)
+
+# Botón volver
+def _on_volver_retirada():
+    mostrar_toast("Volviendo al menú", tipo="info", titulo="Volver")
+    mostrar_pantalla("menu")
+
+btn_volver_retirada = ctk.CTkButton(
+    header_retirada,
+    text="↩ Volver",
+    command=_on_volver_retirada,
+    width=90,
+    height=36,
+    corner_radius=16,
+    fg_color="#5EA0FF",
+    hover_color="#7AB8FF",
+    font=("Segoe UI", 13, "bold"),
+)
+btn_volver_retirada.pack(side="right", padx=10, pady=10)
+
+btn_volver_retirada.bind("<Enter>", lambda e: simple_button_hover(btn_volver_retirada, True))
+btn_volver_retirada.bind("<Leave>", lambda e: simple_button_hover(btn_volver_retirada, False))
+
+# Botón cerrar
+def cerrar_app_retirada():
+    if confirmar_salida("Salir", "¿Deseas cerrar la aplicación?"):
+        mostrar_toast("Cerrando aplicación...", tipo="info", titulo="Cerrando")
+        root.after(300, root.destroy)
+    else:
+        mostrar_toast("Salida cancelada", tipo="info", titulo="Cancelado")
+
+btn_close_retirada = ctk.CTkButton(
+    header_retirada,
+    text="✕",
+    command=cerrar_app_retirada,
+    width=40,
+    height=40,
+    corner_radius=20,
+    fg_color="#FF5252",
+    hover_color="#FF6B6B",
+    font=("Segoe UI", 14, "bold"),
+)
+btn_close_retirada.pack(side="right", padx=10, pady=10)
+
+btn_close_retirada.bind("<Enter>", lambda e: simple_button_hover(btn_close_retirada, True))
+btn_close_retirada.bind("<Leave>", lambda e: simple_button_hover(btn_close_retirada, False))
+
+# === CUERPO PRINCIPAL ===
+main_frame_retirada = ctk.CTkScrollableFrame(pantalla_retirada, fg_color=BG, corner_radius=0)
+main_frame_retirada.pack(fill="both", expand=True, padx=30, pady=10)
+
+# --- BOTÓN DE CARGA ---
+btn_frame_retirada = ctk.CTkFrame(main_frame_retirada, fg_color=CARD_BG, corner_radius=25)
+btn_frame_retirada.pack(pady=18)
+
+def _on_cargar_retirada():
+    mostrar_toast("Selecciona un archivo Excel de retirada", tipo="info", titulo="Cargar Retirada")
+    quick_pulse_animation(btn_cargar_retirada, "#FFD54F")
+    try:
+        cargar_datos_retirada()
+    except Exception as e:
+        mostrar_toast(f"Error al cargar archivo de retirada: {e}", tipo="error", titulo="Error")
+
+btn_cargar_retirada = ctk.CTkButton(
+    btn_frame_retirada,
+    text="📂 Cargar Excel de Retirada",
+    command=_on_cargar_retirada,
+    corner_radius=25,
+    fg_color=ACCENT,
+    hover_color=ACCENT_HOVER,
+    text_color="#000000",
+    font=("Segoe UI", 14, "bold"),
+    width=250,
+)
+btn_cargar_retirada.pack(side="left", padx=12, pady=12)
+
+# Añadir hover simple
+btn_cargar_retirada.bind("<Enter>", lambda e: simple_button_hover(btn_cargar_retirada, True))
+btn_cargar_retirada.bind("<Leave>", lambda e: simple_button_hover(btn_cargar_retirada, False))
+
+# --- INFORMACIÓN DE ARCHIVO Y UNIDAD ---
+info_frame_retirada = ctk.CTkFrame(main_frame_retirada, fg_color=BG)
+info_frame_retirada.pack(pady=12, fill="x")
+
+lbl_info_retirada = ctk.CTkLabel(
+    info_frame_retirada,
+    text="Archivo cargado",
+    font=("Segoe UI", 14, "bold"),
+    text_color=TEXT_SECOND,
+)
+lbl_info_retirada.pack(anchor="w", pady=(0, 4))
+
+lbl_unidad_retirada = ctk.CTkLabel(
+    info_frame_retirada,
+    text="Unidad Cargada: ",
+    font=("Segoe UI", 12),
+    text_color=TEXT_SECOND,
+)
+lbl_unidad_retirada.pack(anchor="w")
+
+# === SECCIÓN DE TABLA ===
+tables_frame_retirada = ctk.CTkFrame(main_frame_retirada, fg_color=CARD_BG, corner_radius=20)
+tables_frame_retirada.pack(fill="both", expand=True, padx=10, pady=10)
+
+# --- TABLA DE RETIRADA ---
+lbl_retirada = ctk.CTkLabel(
+    tables_frame_retirada,
+    text="📦 Items de Retirada Cargados",
+    font=("Segoe UI", 16, "bold"),
+    text_color=ACCENT,
+    anchor="w",
+)
+lbl_retirada.pack(anchor="w", pady=(10, 0), padx=12)
+
+# Crear Treeview
+tree_retirada = ttk.Treeview(
+    tables_frame_retirada,
+    columns=("Codigo", "Nombre del Producto", "Cantidad", "Valor total", "Inventario"),
+    show="headings",
+    height=12,
+)
+
+# Configurar columnas
+columnas = ["Codigo", "Nombre del Producto", "Cantidad", "Valor total", "Inventario"]
+for col in columnas:
+    tree_retirada.heading(col, text=col)
+    tree_retirada.column(col, anchor="center", width=180)
+
+tree_retirada.pack(fill="both", expand=True, padx=12, pady=8)
+
+style.configure(
+    "Treeview",
+    background="#22252A",
+    fieldbackground="#22252A",
+    foreground="#FFFFFF",
+    rowheight=28,
+    borderwidth=0,
+    font=("Segoe UI", 11),
+)
+style.configure(
+    "Treeview.Heading",
+    background="#2E3238",
+    foreground="#FFA726",
+    font=("Segoe UI", 12, "bold"),
+    borderwidth=0,
+)
+
+# --- BOTÓN INICIAR RETIRADA ---
+def _on_iniciar_retirada():
+    mostrar_toast("Iniciando proceso de retirada...", tipo="info", titulo="Retirada")
+    quick_pulse_animation(btn_iniciar_retirada, "#FFD54F")
+    iniciar_proceso_retirada()
+
+btn_iniciar_retirada = ctk.CTkButton(
+    main_frame_retirada,
+    text="🚀 Iniciar Proceso de Retirada",
+    command=_on_iniciar_retirada,
+    fg_color=PRIMARY,
+    hover_color=PRIMARY_HOVER,
+    text_color="#FFFFFF",
+    font=("Segoe UI", 15, "bold"),
+    corner_radius=24,
+    width=280,
+    height=48,
+    state="disabled",
+)
+btn_iniciar_retirada.pack(pady=16)
+
+btn_iniciar_retirada.bind("<Enter>", lambda e: simple_button_hover(btn_iniciar_retirada, True))
+btn_iniciar_retirada.bind("<Leave>", lambda e: simple_button_hover(btn_iniciar_retirada, False))
+
+# --- FOOTER ---
+footer_retirada = ctk.CTkFrame(pantalla_retirada, fg_color=CARD_BG, corner_radius=0)
+footer_retirada.pack(fill="x", side="bottom")
+lbl_footer_retirada = ctk.CTkLabel(footer_retirada, text="Desarrollado por Area de desarrollo de Healthy", font=("Segoe UI", 11), text_color=TEXT_SECOND)
+lbl_footer_retirada.pack(pady=8)
+# MOSTRAR PANTALLA INICIAL
 mostrar_pantalla("menu")
 
 # Solo iniciamos mainloop si no hay otro en el archivo
