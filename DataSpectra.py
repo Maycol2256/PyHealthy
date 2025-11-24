@@ -10,11 +10,12 @@ from typing import Optional
 import customtkinter as ctk
 import threading
 import math
+from datetime import datetime
 
 # === CONFIGURACIÓN ===
 CARPETA_BOTONES = "Buttons"
 URL_TECFOOD = "https://food.teknisa.com//df/#/df_entrada#dfe11000_lancamento_entrada"
-URL_RETIRADA = "https://food.teknisa.com//pla/#/pla_medicao#pla02000_retirada_planejamento"  # NUEVA URL
+URL_RETIRADA = "https://food.teknisa.com//est/#/est_relatorios#est31100_posicao_de_estoque"
 
 SUPABASE_URL = "https://ulboklgzjriatmaxzpsi.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsYm9rbGd6anJpYXRtYXh6cHNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3ODQxNDAsImV4cCI6MjA3ODM2MDE0MH0.gY6_K4JQoJxPZmdXMIbFZfiJAOdavbg8jDJW1rOUSPk"
@@ -273,9 +274,9 @@ def simple_button_hover(button, is_enter=True):
             button.configure(fg_color="#7AB8FF")
         elif button == btn_close or button == btn_exit_menu:
             button.configure(fg_color="#FF6B6B")
-        elif button == btn_cargar_retirada:
+        elif button == btn_descargar_informes:
             button.configure(fg_color=ACCENT_HOVER)
-        elif button == btn_iniciar_retirada:
+        elif button == btn_procesar_informes:
             button.configure(fg_color=PRIMARY_HOVER)
     else:
         if button == btn_excel:
@@ -288,9 +289,9 @@ def simple_button_hover(button, is_enter=True):
             button.configure(fg_color="#5EA0FF")
         elif button == btn_close or button == btn_exit_menu:
             button.configure(fg_color="#FF5252")
-        elif button == btn_cargar_retirada:
+        elif button == btn_descargar_informes:
             button.configure(fg_color=ACCENT)
-        elif button == btn_iniciar_retirada:
+        elif button == btn_procesar_informes:
             button.configure(fg_color=PRIMARY)
 
 def simple_item_hover(item, is_enter=True):
@@ -410,146 +411,242 @@ def confirmar_salida(titulo="Confirmar salida", mensaje="¿Deseas salir de la ap
     confirm.wait_window()
     return result["value"]
 
-# ========= NUEVAS FUNCIONES PARA RETIRADA =========
+# ========= NUEVAS FUNCIONES PARA INVENTARIO =========
 
-def cargar_datos_retirada():
-    archivo = filedialog.askopenfilename(
-        title="Seleccionar archivo Excel de Retirada",
-        filetypes=[("Archivos Excel", "*.xlsx *.xls")],
-    )
-    if not archivo:
-        mostrar_toast("No se seleccionó ningún archivo.", tipo="warning", titulo="Aviso")
-        return
+# Lista de códigos de clínica estáticos
+CODIGOS_CLINICAS = ["0001", "0011", "0024", "0002", "0031", "0014", "0017", "0018", "0003"]
 
-    global archivo_retirada, df_retirada, unidad_cargada
-    archivo_retirada = archivo
-
-    try:
-        df = pd.read_excel(archivo, dtype=str).fillna("")
-        columnas_requeridas = ["Codigo", "Nombre del Producto", "Cantidad", "Valor total", "Inventario", "Unidad"]
-        for col in columnas_requeridas:
-            if col not in df.columns:
-                mostrar_toast(f"Falta la columna '{col}' en el archivo.", tipo="error", titulo="Error de formato")
-                return
-        df_retirada = df
-        unidades = df["Unidad"].dropna().unique()
-        if len(unidades) > 0:
-            unidad_completa = str(unidades[0]).strip()
-            codigo_unidad = "".join([c for c in unidad_completa if c.isdigit()])[:4]
-            if len(codigo_unidad) == 4:
-                unidad_cargada = codigo_unidad
-            else:
-                unidad_cargada = "0000"
-        else:
-            unidad_completa = "No especificada"
-            unidad_cargada = "0000"
-        
-        # Corregir valores negativos en inventario
-        for index, row in df_retirada.iterrows():
-            inventario_str = str(row["Inventario"]).strip()
-            try:
-                # Convertir a número y tomar valor absoluto si es negativo
-                inventario_val = float(inventario_str)
-                if inventario_val < 0:
-                    df_retirada.at[index, "Inventario"] = str(abs(inventario_val))
-            except (ValueError, TypeError):
-                pass
-        
-        actualizar_tabla_retirada()
-        actualizar_info_retirada(unidad_completa)
-        
-        try:
-            btn_iniciar_retirada.configure(state="normal")
-            quick_pulse_animation(btn_iniciar_retirada, "#4CAF50")
-        except Exception:
-            pass
-        
-        mostrar_toast("Archivo de retirada cargado correctamente ✅", tipo="success", titulo="Éxito")
-        print(f"📊 Datos de retirada cargados: {len(df_retirada)} registros")
-        print(f"🏥 Unidad cargada: {unidad_completa} (Código: {unidad_cargada})")
-
-    except Exception as e:
-        mostrar_toast(f"No se pudo leer el archivo:\n{e}", tipo="error", titulo="Error")
-
-def actualizar_info_retirada(unidad_completa=""):
-    try:
-        nombre_archivo = os.path.basename(archivo_retirada) if archivo_retirada else "Ningún archivo cargado"
-        lbl_info_retirada.configure(text=f"Archivo cargado: {nombre_archivo}")
-        lbl_unidad_retirada.configure(text=f"Unidad Cargada: {unidad_completa}")
-    except Exception as e:
-        print(f"Error actualizando info retirada: {e}")
-
-def actualizar_tabla_retirada():
-    for row in tree_retirada.get_children():
-        tree_retirada.delete(row)
+def descargar_informes_inventario():
+    print("🏁 Iniciando descarga de informes de inventario...")
+    mostrar_toast("Iniciando descarga de informes...", tipo="info", titulo="Descarga")
     
-    if not df_retirada.empty:
-        for _, fila in df_retirada.iterrows():
-            valores = [
-                fila["Codigo"], 
-                fila["Nombre del Producto"], 
-                fila["Cantidad"], 
-                fila["Valor total"], 
-                fila["Inventario"]
-            ]
-            tree_retirada.insert("", "end", values=valores)
-
-def iniciar_proceso_retirada():
-    if df_retirada.empty:
-        mostrar_toast("Primero carga un archivo de retirada.", tipo="error", titulo="Error")
-        return
-
-    print(f"🏁 Iniciando proceso de retirada con {len(df_retirada)} items...")
-    mostrar_toast("Iniciando proceso de retirada...", tipo="info", titulo="Retirada")
-    
-    def _proceso_retirada():
+    def _proceso_descarga():
         try:
-            print("🔗 Abriendo sistema de retirada en Edge...")
+            print("🔗 Abriendo sistema de inventario en Edge...")
             subprocess.Popen(["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", URL_RETIRADA])
-            time.sleep(20)
+            time.sleep(10)
             
-            #================================== PROCESO FUNCION #1 ================
-            
-            print("🔧 Ejecutando proceso de retirada...")
-            
-            # Simulación de procesamiento de cada item
-            for index, item in df_retirada.iterrows():
-                codigo = str(item["Codigo"]).strip()
-                producto = str(item["Nombre del Producto"]).strip()
-                cantidad = str(item["Cantidad"]).strip()
-                valorTotal = str(item["Valor total"]).strip()
-                inventario = str(item["Inventario"]).strip()
+            # Proceso para descargar 9 informes (uno por cada clínica)
+            for i, codigo_clinica in enumerate(CODIGOS_CLINICAS):
+                print(f"📥 Descargando informe {i+1}/9 para clínica {codigo_clinica}...")
                 
-                print(f"📦 Procesando retirada {index+1}/{len(df_retirada)}: {producto}")
-                print(f"   Código: {codigo}, Cantidad: {cantidad}, Inventario: {inventario}")
+                # Buscar y hacer clic en el campo de unidad
                 if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6):
-                    mostrar_toast("No se encontró el botón unidad_select.png", tipo="warning", titulo="Botón no encontrado")
+                    mostrar_toast("No se encontró el campo 'unidad'.", tipo="warning", titulo="Campo no encontrado")
                     continue
                 
                 try:
-                    time.sleep(1)
-                    pyautogui.typewrite(unidad_cargada)
-                    time.sleep(5)
-                    print(f"✅ Unidad {unidad_cargada} seleccionada correctamente.")
+                    time.sleep(2)
+                    pyautogui.typewrite(codigo_clinica)
+                    time.sleep(3)
+                    x, y = pyautogui.position()
+                    pyautogui.moveTo(x, y + 50, duration=0.5)
+                    pyautogui.click()
+                    print(f"✅ Código de clínica {codigo_clinica} ingresado correctamente.")
                 except Exception as e:
-                    print("Error al seleccionar unidad:", e)
+                    print(f"Error al ingresar código de clínica {codigo_clinica}: {e}")
                     continue
-                pyautogui.press("tab")
-                time.sleep(0.5)
+                time.sleep(3)
+                # Llenar los campos necesarios para el informe
+                if not buscar_y_click("tipo_costo.png", "tipo_costo"):
+                    mostrar_toast("No se encontró 'tipo_costo.png'.", tipo="warning", titulo="Botón no encontrado")
+                    continue
                 
+                time.sleep(5)
+                pyautogui.typewrite("01")
+                time.sleep(5)
+                x, y = pyautogui.position()
+                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.click()
+                time.sleep(5)
+                
+                if not buscar_y_click("nivel_totalizacion.png", "nivel_totalizacion", confianza=0.6):
+                    mostrar_toast("No se encontró 'nivel_totalizacion.png'.", tipo="warning", titulo="Botón no encontrado")
+                    continue
+                
+                time.sleep(5)
+                x, y = pyautogui.position()
+                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.click()
+                time.sleep(5)
+                
+                if not buscar_y_click("producto_inicial.png", "producto_inicial"):
+                    mostrar_toast("No se encontró 'producto_inicial.png'.", tipo="warning", titulo="Botón no encontrado")
+                    continue
+                
+                time.sleep(5)
+                pyautogui.typewrite("1")
+                time.sleep(5)
+                x, y = pyautogui.position()
+                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.click()
+                time.sleep(5)
+                
+                if not buscar_y_click("producto_final.png", "producto_final"):
+                    mostrar_toast("No se encontró 'producto_final.png'.", tipo="warning", titulo="Botón no encontrado")
+                    continue
+                
+                time.sleep(5)
+                pyautogui.typewrite("5")
+                time.sleep(5)
+                x, y = pyautogui.position()
+                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.click()
+                time.sleep(5)
+                
+                # Buscar y hacer clic en el botón de descarga XLSX
+                if not buscar_y_click("generar_xlsx.png", "generar_xlsx", confianza=0.7):
+                    mostrar_toast("No se encontró 'generar_xlsx.png'.", tipo="warning", titulo="Botón no encontrado")
+                    continue
+                
+                print(f"✅ Descarga iniciada para clínica {codigo_clinica}")
+                time.sleep(8)  # Esperar a que se complete la descarga
+                
+                # Recargar la página para la siguiente clínica (solo si no es la última)
+                if i < len(CODIGOS_CLINICAS) - 1:
+                    try:
+                        pyautogui.hotkey("ctrl", "r")
+                        time.sleep(10)  # Esperar a que la página se recargue completamente
+                    except Exception:
+                        try:
+                            pyautogui.press("f5")
+                            time.sleep(10)
+                        except Exception:
+                            pass
+                
+                mostrar_toast(f"Informe {i+1}/9 descargado (Clínica {codigo_clinica})", 
+                             tipo="success", titulo="Progreso")
             
-            print("✅ Proceso de retirada completado")
-            mostrar_toast("Proceso de retirada completado ✅", tipo="success", titulo="Éxito")
+            print("✅ Descarga de informes completada")
+            mostrar_toast("Descarga de 9 informes completada ✅", tipo="success", titulo="Éxito")
+            
+            # Habilitar botón de procesar
+            root.after(0, lambda: btn_procesar_informes.configure(state="normal"))
             
         except Exception as e:
-            print(f"❌ Error en proceso de retirada: {e}")
-            mostrar_toast(f"Error en proceso de retirada:\n{e}", tipo="error", titulo="Error")
+            print(f"❌ Error en descarga de informes: {e}")
+            mostrar_toast(f"Error en descarga de informes:\n{e}", tipo="error", titulo="Error")
         finally:
             # Reactivar botón
-            root.after(0, lambda: btn_iniciar_retirada.configure(state="normal"))
-    btn_iniciar_retirada.configure(state="disabled")
-    threading.Thread(target=_proceso_retirada, daemon=True).start()
-# ========= FIN NUEVAS FUNCIONES=======================================
+            root.after(0, lambda: btn_descargar_informes.configure(state="normal"))
+    
+    btn_descargar_informes.configure(state="disabled")
+    threading.Thread(target=_proceso_descarga, daemon=True).start()
+def procesar_informes_inventario():
+    print("🔄 Procesando informes descargados...")
+    mostrar_toast("Procesando informes descargados...", tipo="info", titulo="Procesamiento")
+    
+    def _proceso_procesamiento():
+        try:
+            # Ruta donde se descargan los informes
+            carpeta_descargas = os.path.join(os.path.expanduser("~"), "Downloads")
+            
+            # Buscar archivos Excel recientes
+            archivos_excel = []
+            for archivo in os.listdir(carpeta_descargas):
+                if archivo.endswith(('.xlsx', '.xls')) and any(keyword in archivo.lower() for keyword in ['inventario', 'stock', 'posicion', 'estoque']):
+                    archivos_excel.append(os.path.join(carpeta_descargas, archivo))
+            
+            if len(archivos_excel) < 9:
+                mostrar_toast(f"Solo se encontraron {len(archivos_excel)} archivos. Se esperaban 9.", 
+                             tipo="warning", titulo="Advertencia")
+                # Continuar con los que se encontraron
+                if len(archivos_excel) == 0:
+                    mostrar_toast("No se encontraron archivos para procesar", tipo="error", titulo="Error")
+                    return
+            
+            # Tomar los 9 archivos más recientes (o los que haya)
+            archivos_excel = sorted(archivos_excel, key=os.path.getmtime, reverse=True)[:9]
+            
+            datos_combinados = []
+            
+            for i, archivo in enumerate(archivos_excel):
+                print(f"📊 Procesando archivo {i+1}/{len(archivos_excel)}: {os.path.basename(archivo)}")
+                
+                try:
+                    # Leer el archivo Excel
+                    df = pd.read_excel(archivo)
+                    
+                    # Definir columnas importantes para inventario
+                    # Ajusta estas columnas según la estructura real de tus archivos
+                    posibles_columnas_importantes = [
+                        'Código', 'Código Producto', 'Producto', 'Nombre Producto', 
+                        'Cantidad', 'Stock', 'Stock Actual', 'Existencia',
+                        'Ubicación', 'Almacén', 'Unidad', 'Clínica'
+                    ]
+                    
+                    # Filtrar solo las columnas importantes que existan en el archivo
+                    columnas_existentes = [col for col in posibles_columnas_importantes if col in df.columns]
+                    
+                    if columnas_existentes:
+                        # Agregar columna con el nombre del archivo de origen
+                        df_filtrado = df[columnas_existentes].copy()
+                        df_filtrado['Archivo_Origen'] = os.path.basename(archivo)
+                        datos_combinados.append(df_filtrado)
+                        print(f"✅ Procesadas {len(df_filtrado)} filas del archivo {os.path.basename(archivo)}")
+                    else:
+                        print(f"⚠️ No se encontraron columnas importantes en {archivo}")
+                        # Si no encuentra columnas específicas, usar todas las columnas
+                        df_filtrado = df.copy()
+                        df_filtrado['Archivo_Origen'] = os.path.basename(archivo)
+                        datos_combinados.append(df_filtrado)
+                        print(f"✅ Usadas todas las {len(df_filtrado)} columnas del archivo {os.path.basename(archivo)}")
+                        
+                except Exception as e:
+                    print(f"❌ Error procesando {archivo}: {e}")
+                    mostrar_toast(f"Error procesando {os.path.basename(archivo)}", tipo="warning", titulo="Advertencia")
+                    continue
+            
+            if datos_combinados:
+                # Combinar todos los datos
+                df_final = pd.concat(datos_combinados, ignore_index=True)
+                
+                # Eliminar duplicados exactos si es necesario
+                df_final = df_final.drop_duplicates()
+                
+                # Crear nombre del archivo con fecha actual
+                fecha_actual = datetime.now().strftime("%Y-%m-%d")
+                nombre_archivo = f"Inventario de Stock {fecha_actual}.xlsx"
+                
+                # Guardar el archivo combinado
+                ruta_guardado = os.path.join(carpeta_descargas, nombre_archivo)
+                df_final.to_excel(ruta_guardado, index=False)
+                
+                print(f"✅ Archivo combinado guardado: {ruta_guardado}")
+                print(f"📊 Total de registros consolidados: {len(df_final)}")
+                
+                mostrar_toast(f"Inventario consolidado guardado:\n{nombre_archivo}\nTotal: {len(df_final)} registros", 
+                             tipo="success", titulo="Proceso Completado")
+                
+                # Actualizar la interfaz con la información del archivo creado
+                root.after(0, lambda: actualizar_info_inventario(nombre_archivo, len(df_final)))
+                
+            else:
+                mostrar_toast("No se pudieron procesar los archivos", tipo="error", titulo="Error")
+                
+        except Exception as e:
+            print(f"❌ Error en procesamiento de informes: {e}")
+            mostrar_toast(f"Error en procesamiento:\n{e}", tipo="error", titulo="Error")
+        finally:
+            # Reactivar botón
+            root.after(0, lambda: btn_procesar_informes.configure(state="normal"))
+    
+    btn_procesar_informes.configure(state="disabled")
+    threading.Thread(target=_proceso_procesamiento, daemon=True).start()
+
+def actualizar_info_inventario(nombre_archivo="", total_items=0):
+    try:
+        lbl_info_inventario.configure(text=f"Archivo creado: {nombre_archivo}")
+        lbl_estado_inventario.configure(text=f"Total de items procesados: {total_items}")
+    except Exception as e:
+        print(f"Error actualizando info inventario: {e}")
+
+def actualizar_tabla_inventario():
+    # Esta función puede usarse para mostrar los datos procesados en la tabla
+    # Por ahora la dejamos como placeholder
+    pass
+
+# ========= FIN NUEVAS FUNCIONES ======================================
 
 # FUNCIONES AUXILIARES ORIGINALES 
 
@@ -963,7 +1060,6 @@ def iniciar_proceso():
                 if not buscar_y_click("cantidad.png", "cantidad"):
                     mostrar_toast("No se encontró 'cantidad.png'.", tipo="warning", titulo="Botón no encontrado")
                     raise Exception("boton_cantidad_no_encontrado")
-
                 pyautogui.typewrite(cantidad)
                 pyautogui.press("tab")
                 time.sleep(5)
@@ -1018,7 +1114,7 @@ try:
     root
 except NameError:
     root = ctk.CTk()
-    root.title("DataSpectra - Carga de Facturas TecFood")
+    root.title("DataSpectra - Sistema de Inventario")
     root.attributes("-fullscreen", True)
     root.configure(fg_color="#0E0F12")
 
@@ -1122,7 +1218,7 @@ def crear_item_lista(parent, icon, titulo, subtitulo, command=None, enabled=True
 
 # Crear 3 items
 crear_item_lista(content_menu, "🧾", "Cargar facturas", "Automatiza la carga de facturas en TecFood", command=lambda: mostrar_pantalla("facturas"), enabled=True)
-crear_item_lista(content_menu, "📦", "Proceso automatizado: Retirada", "Automatiza procesos de retirada y planificación", command=lambda: mostrar_pantalla("retirada"), enabled=True)
+crear_item_lista(content_menu, "📦", "Sistema de Inventario Automatizado", "Descarga y consolida informes de inventario de stock", command=lambda: mostrar_pantalla("inventario"), enabled=True)
 crear_item_lista(content_menu, "⚙️", "Función futura #2", "Implementación posterior", command=None, enabled=False)
 
 # footer pequeño
@@ -1372,32 +1468,32 @@ lbl_footer = ctk.CTkLabel(footer, text="Desarrollado por Area de desarrollo de H
 lbl_footer.pack(pady=8)
 
 # =========================
-# PANTALLA DE Funcion Nueva #1
+# PANTALLA DE INVENTARIO
 # =========================
-pantalla_retirada = ctk.CTkFrame(contenedor, fg_color=BG)
-pantallas["retirada"] = pantalla_retirada
+pantalla_inventario = ctk.CTkFrame(contenedor, fg_color=BG)
+pantallas["inventario"] = pantalla_inventario
 
 # === HEADER SUPERIOR ===
-header_retirada = ctk.CTkFrame(pantalla_retirada, fg_color=CARD_BG, corner_radius=20)
-header_retirada.pack(fill="x", padx=20, pady=12)
+header_inventario = ctk.CTkFrame(pantalla_inventario, fg_color=CARD_BG, corner_radius=20)
+header_inventario.pack(fill="x", padx=20, pady=12)
 
-lbl_titulo_retirada = ctk.CTkLabel(
-    header_retirada,
-    text="Proceso automatizado: Retirada (Planificación)",
+lbl_titulo_inventario = ctk.CTkLabel(
+    header_inventario,
+    text="Sistema de Inventario Automatizado",
     font=("Segoe UI", 24, "bold"),
     text_color=TEXT_MAIN,
 )
-lbl_titulo_retirada.pack(side="left", padx=20, pady=12)
+lbl_titulo_inventario.pack(side="left", padx=20, pady=12)
 
 # Botón volver
-def _on_volver_retirada():
+def _on_volver_inventario():
     mostrar_toast("Volviendo al menú", tipo="info", titulo="Volver")
     mostrar_pantalla("menu")
 
-btn_volver_retirada = ctk.CTkButton(
-    header_retirada,
+btn_volver_inventario = ctk.CTkButton(
+    header_inventario,
     text="↩ Volver",
-    command=_on_volver_retirada,
+    command=_on_volver_inventario,
     width=90,
     height=36,
     corner_radius=16,
@@ -1405,23 +1501,23 @@ btn_volver_retirada = ctk.CTkButton(
     hover_color="#7AB8FF",
     font=("Segoe UI", 13, "bold"),
 )
-btn_volver_retirada.pack(side="right", padx=10, pady=10)
+btn_volver_inventario.pack(side="right", padx=10, pady=10)
 
-btn_volver_retirada.bind("<Enter>", lambda e: simple_button_hover(btn_volver_retirada, True))
-btn_volver_retirada.bind("<Leave>", lambda e: simple_button_hover(btn_volver_retirada, False))
+btn_volver_inventario.bind("<Enter>", lambda e: simple_button_hover(btn_volver_inventario, True))
+btn_volver_inventario.bind("<Leave>", lambda e: simple_button_hover(btn_volver_inventario, False))
 
 # Botón cerrar
-def cerrar_app_retirada():
+def cerrar_app_inventario():
     if confirmar_salida("Salir", "¿Deseas cerrar la aplicación?"):
         mostrar_toast("Cerrando aplicación...", tipo="info", titulo="Cerrando")
         root.after(300, root.destroy)
     else:
         mostrar_toast("Salida cancelada", tipo="info", titulo="Cancelado")
 
-btn_close_retirada = ctk.CTkButton(
-    header_retirada,
+btn_close_inventario = ctk.CTkButton(
+    header_inventario,
     text="✕",
-    command=cerrar_app_retirada,
+    command=cerrar_app_inventario,
     width=40,
     height=40,
     corner_radius=20,
@@ -1429,140 +1525,117 @@ btn_close_retirada = ctk.CTkButton(
     hover_color="#FF6B6B",
     font=("Segoe UI", 14, "bold"),
 )
-btn_close_retirada.pack(side="right", padx=10, pady=10)
+btn_close_inventario.pack(side="right", padx=10, pady=10)
 
-btn_close_retirada.bind("<Enter>", lambda e: simple_button_hover(btn_close_retirada, True))
-btn_close_retirada.bind("<Leave>", lambda e: simple_button_hover(btn_close_retirada, False))
+btn_close_inventario.bind("<Enter>", lambda e: simple_button_hover(btn_close_inventario, True))
+btn_close_inventario.bind("<Leave>", lambda e: simple_button_hover(btn_close_inventario, False))
 
 # === CUERPO PRINCIPAL ===
-main_frame_retirada = ctk.CTkScrollableFrame(pantalla_retirada, fg_color=BG, corner_radius=0)
-main_frame_retirada.pack(fill="both", expand=True, padx=30, pady=10)
+main_frame_inventario = ctk.CTkScrollableFrame(pantalla_inventario, fg_color=BG, corner_radius=0)
+main_frame_inventario.pack(fill="both", expand=True, padx=30, pady=10)
 
-# --- BOTÓN DE CARGA ---
-btn_frame_retirada = ctk.CTkFrame(main_frame_retirada, fg_color=CARD_BG, corner_radius=25)
-btn_frame_retirada.pack(pady=18)
+# --- BOTONES DE PROCESO ---
+btn_frame_inventario = ctk.CTkFrame(main_frame_inventario, fg_color=CARD_BG, corner_radius=25)
+btn_frame_inventario.pack(pady=18)
 
-def _on_cargar_retirada():
-    mostrar_toast("Selecciona un archivo Excel de retirada", tipo="info", titulo="Cargar Retirada")
-    quick_pulse_animation(btn_cargar_retirada, "#FFD54F")
+def _on_descargar_informes():
+    mostrar_toast("Iniciando descarga de informes...", tipo="info", titulo="Descarga")
+    quick_pulse_animation(btn_descargar_informes, "#FFD54F")
     try:
-        cargar_datos_retirada()
+        descargar_informes_inventario()
     except Exception as e:
-        mostrar_toast(f"Error al cargar archivo de retirada: {e}", tipo="error", titulo="Error")
+        mostrar_toast(f"Error al descargar informes: {e}", tipo="error", titulo="Error")
 
-btn_cargar_retirada = ctk.CTkButton(
-    btn_frame_retirada,
-    text="📂 Cargar Excel de Retirada",
-    command=_on_cargar_retirada,
+btn_descargar_informes = ctk.CTkButton(
+    btn_frame_inventario,
+    text="📥 Descargar Informes",
+    command=_on_descargar_informes,
     corner_radius=25,
     fg_color=ACCENT,
     hover_color=ACCENT_HOVER,
     text_color="#000000",
     font=("Segoe UI", 14, "bold"),
-    width=250,
+    width=220,
 )
-btn_cargar_retirada.pack(side="left", padx=12, pady=12)
+btn_descargar_informes.pack(side="left", padx=12, pady=12)
+
+def _on_procesar_informes():
+    mostrar_toast("Procesando informes descargados...", tipo="info", titulo="Procesamiento")
+    quick_pulse_animation(btn_procesar_informes, "#4FC3F7")
+    try:
+        procesar_informes_inventario()
+    except Exception as e:
+        mostrar_toast(f"Error al procesar informes: {e}", tipo="error", titulo="Error")
+
+btn_procesar_informes = ctk.CTkButton(
+    btn_frame_inventario,
+    text="🔄 Procesar Informes",
+    command=_on_procesar_informes,
+    corner_radius=25,
+    fg_color=PRIMARY,
+    hover_color=PRIMARY_HOVER,
+    text_color="#FFFFFF",
+    font=("Segoe UI", 14, "bold"),
+    width=220,
+    state="disabled",
+)
+btn_procesar_informes.pack(side="left", padx=12, pady=12)
 
 # Añadir hover simple
-btn_cargar_retirada.bind("<Enter>", lambda e: simple_button_hover(btn_cargar_retirada, True))
-btn_cargar_retirada.bind("<Leave>", lambda e: simple_button_hover(btn_cargar_retirada, False))
+btn_descargar_informes.bind("<Enter>", lambda e: simple_button_hover(btn_descargar_informes, True))
+btn_descargar_informes.bind("<Leave>", lambda e: simple_button_hover(btn_descargar_informes, False))
+btn_procesar_informes.bind("<Enter>", lambda e: simple_button_hover(btn_procesar_informes, True))
+btn_procesar_informes.bind("<Leave>", lambda e: simple_button_hover(btn_procesar_informes, False))
 
-# --- INFORMACIÓN DE ARCHIVO Y UNIDAD ---
-info_frame_retirada = ctk.CTkFrame(main_frame_retirada, fg_color=BG)
-info_frame_retirada.pack(pady=12, fill="x")
+# --- INFORMACIÓN DE ARCHIVO Y ESTADO ---
+info_frame_inventario = ctk.CTkFrame(main_frame_inventario, fg_color=BG)
+info_frame_inventario.pack(pady=12, fill="x")
 
-lbl_info_retirada = ctk.CTkLabel(
-    info_frame_retirada,
-    text="Archivo cargado",
+lbl_info_inventario = ctk.CTkLabel(
+    info_frame_inventario,
+    text="Esperando descarga de informes...",
     font=("Segoe UI", 14, "bold"),
     text_color=TEXT_SECOND,
 )
-lbl_info_retirada.pack(anchor="w", pady=(0, 4))
+lbl_info_inventario.pack(anchor="w", pady=(0, 4))
 
-lbl_unidad_retirada = ctk.CTkLabel(
-    info_frame_retirada,
-    text="Unidad Cargada: ",
+lbl_estado_inventario = ctk.CTkLabel(
+    info_frame_inventario,
+    text="Estado: Listo para comenzar",
     font=("Segoe UI", 12),
     text_color=TEXT_SECOND,
 )
-lbl_unidad_retirada.pack(anchor="w")
+lbl_estado_inventario.pack(anchor="w")
 
-# === SECCIÓN DE TABLA ===
-tables_frame_retirada = ctk.CTkFrame(main_frame_retirada, fg_color=CARD_BG, corner_radius=20)
-tables_frame_retirada.pack(fill="both", expand=True, padx=10, pady=10)
+# === SECCIÓN INFORMATIVA ===
+info_frame = ctk.CTkFrame(main_frame_inventario, fg_color=CARD_BG, corner_radius=20)
+info_frame.pack(fill="x", padx=10, pady=10)
 
-# --- TABLA DE RETIRADA ---
-lbl_retirada = ctk.CTkLabel(
-    tables_frame_retirada,
-    text="📦 Items de Retirada Cargados",
+lbl_info_titulo = ctk.CTkLabel(
+    info_frame,
+    text="📋 Proceso de Inventario Automatizado",
     font=("Segoe UI", 16, "bold"),
     text_color=ACCENT,
     anchor="w",
 )
-lbl_retirada.pack(anchor="w", pady=(10, 0), padx=12)
+lbl_info_titulo.pack(anchor="w", pady=(10, 5), padx=12)
 
-# Crear Treeview
-tree_retirada = ttk.Treeview(
-    tables_frame_retirada,
-    columns=("Codigo", "Nombre del Producto", "Cantidad", "Valor total", "Inventario"),
-    show="headings",
-    height=12,
+lbl_info_desc = ctk.CTkLabel(
+    info_frame,
+    text="Este proceso automatizado:\n• Descarga 9 informes de inventario (uno por cada clínica)\n• Escribe automáticamente los códigos de cada clínica\n• Llena los campos necesarios y descarga en formato XLSX\n• Combina todos los datos en un solo archivo Excel\n• Guarda el resultado como 'Inventario de Stock {Fecha}'",
+    font=("Segoe UI", 12),
+    text_color=TEXT_SECOND,
+    anchor="w",
+    justify="left",
 )
-
-# Configurar columnas
-columnas = ["Codigo", "Nombre del Producto", "Cantidad", "Valor total", "Inventario"]
-for col in columnas:
-    tree_retirada.heading(col, text=col)
-    tree_retirada.column(col, anchor="center", width=180)
-
-tree_retirada.pack(fill="both", expand=True, padx=12, pady=8)
-
-style.configure(
-    "Treeview",
-    background="#22252A",
-    fieldbackground="#22252A",
-    foreground="#FFFFFF",
-    rowheight=28,
-    borderwidth=0,
-    font=("Segoe UI", 11),
-)
-style.configure(
-    "Treeview.Heading",
-    background="#2E3238",
-    foreground="#FFA726",
-    font=("Segoe UI", 12, "bold"),
-    borderwidth=0,
-)
-
-# --- BOTÓN INICIAR RETIRADA ---
-def _on_iniciar_retirada():
-    mostrar_toast("Iniciando proceso de retirada...", tipo="info", titulo="Retirada")
-    quick_pulse_animation(btn_iniciar_retirada, "#FFD54F")
-    iniciar_proceso_retirada()
-
-btn_iniciar_retirada = ctk.CTkButton(
-    main_frame_retirada,
-    text="🚀 Iniciar Proceso de Retirada",
-    command=_on_iniciar_retirada,
-    fg_color=PRIMARY,
-    hover_color=PRIMARY_HOVER,
-    text_color="#FFFFFF",
-    font=("Segoe UI", 15, "bold"),
-    corner_radius=24,
-    width=280,
-    height=48,
-    state="disabled",
-)
-btn_iniciar_retirada.pack(pady=16)
-
-btn_iniciar_retirada.bind("<Enter>", lambda e: simple_button_hover(btn_iniciar_retirada, True))
-btn_iniciar_retirada.bind("<Leave>", lambda e: simple_button_hover(btn_iniciar_retirada, False))
+lbl_info_desc.pack(anchor="w", pady=(0, 10), padx=12)
 
 # --- FOOTER ---
-footer_retirada = ctk.CTkFrame(pantalla_retirada, fg_color=CARD_BG, corner_radius=0)
-footer_retirada.pack(fill="x", side="bottom")
-lbl_footer_retirada = ctk.CTkLabel(footer_retirada, text="Desarrollado por Area de desarrollo de Healthy", font=("Segoe UI", 11), text_color=TEXT_SECOND)
-lbl_footer_retirada.pack(pady=8)
+footer_inventario = ctk.CTkFrame(pantalla_inventario, fg_color=CARD_BG, corner_radius=0)
+footer_inventario.pack(fill="x", side="bottom")
+lbl_footer_inventario = ctk.CTkLabel(footer_inventario, text="Desarrollado por Area de desarrollo de Healthy", font=("Segoe UI", 11), text_color=TEXT_SECOND)
+lbl_footer_inventario.pack(pady=8)
+
 # MOSTRAR PANTALLA INICIAL
 mostrar_pantalla("menu")
 
