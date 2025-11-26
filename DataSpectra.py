@@ -11,6 +11,12 @@ import customtkinter as ctk
 import threading
 import math
 from datetime import datetime
+import shutil
+import ctypes
+from ctypes import wintypes
+import glob
+import string
+import re
 
 # === CONFIGURACIÓN ===
 CARPETA_BOTONES = "Buttons"
@@ -30,10 +36,11 @@ origen_datos = ""
 archivo_retirada = None
 df_retirada = pd.DataFrame()
 unidad_cargada = ""
+carpeta_inventario_actual = ""
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
-# PALETA DE COLORES
 
+# PALETA DE COLORES
 PRIMARY = "#3A7BD5"
 PRIMARY_HOVER = "#5EA0FF"
 ACCENT = "#FFA726" 
@@ -43,8 +50,17 @@ TEXT_MAIN = "#FFFFFF"
 TEXT_SECOND = "#B0B0B0"
 BG = "#0E0F12"
 
-# SISTEMA DE NOTIFICACIONES OPTIMIZADO
-
+def silenciar_customtkinter():
+    import sys
+    class NullWriter:
+        def write(self, txt):
+            pass
+        def flush(self):
+            pass
+    sys.stderr = NullWriter()
+    
+    
+# SISTEMA DE NOTIFICACIONES OPTIMIZADO - CORREGIDO
 _toast_lock = threading.Lock()
 _active_toasts = []
 
@@ -65,34 +81,10 @@ def _reposition_toasts():
     with _toast_lock:
         for idx, t in enumerate(list(_active_toasts)):
             try:
-                _position_toast_window(t, width=t.winfo_width() or 360, height=t.winfo_height() or 100, offset_index=idx)
+                if t.winfo_exists():
+                    _position_toast_window(t, width=t.winfo_width() or 360, height=t.winfo_height() or 100, offset_index=idx)
             except Exception:
                 pass
-
-def _slide_and_fade_in(win, start_offset=40, steps=8, delay=15):
-    try:
-        geom = win.geometry()
-        parts = geom.split('+')
-        if len(parts) >= 3:
-            base_x = int(parts[1])
-            base_y = int(parts[2])
-        else:
-            base_x = win.winfo_x()
-            base_y = win.winfo_y()
-        
-        for i in range(steps):
-            frac = (i + 1) / steps
-            y = int(base_y + start_offset * (1 - frac))
-            alpha = frac
-            try:
-                win.geometry(f"{win.winfo_width()}x{win.winfo_height()}+{base_x}+{y}")
-                win.attributes("-alpha", alpha)
-            except Exception:
-                pass
-            win.update_idletasks()
-            time.sleep(delay / 1000.0)
-    except Exception:
-        pass
 
 def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
     estilos = {
@@ -112,51 +104,42 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
     toast = ctk.CTkToplevel(root)
     toast.overrideredirect(True)
     toast.attributes("-topmost", True)
-    toast.configure(fg_color=st["bg"])  # Fondo principal sin borde
+    toast.configure(fg_color=st["bg"])
     
-    # Frame principal con sombra sutil en la parte inferior
+    # Frame principal
     main_frame = ctk.CTkFrame(toast, fg_color=st["bg"], corner_radius=16)
     main_frame.pack(fill="both", expand=True, padx=1, pady=1)
     
-    # Frame de sombra inferior (simula sombra sutil)
-    shadow_height = 4
-    shadow_frame = ctk.CTkFrame(main_frame, fg_color=st["shadow"], height=shadow_height, 
-                               corner_radius=8)
+    # Frame de sombra
+    shadow_frame = ctk.CTkFrame(main_frame, fg_color=st["shadow"], height=4, corner_radius=8)
     shadow_frame.pack(side="bottom", fill="x", padx=8, pady=(0, 2))
     shadow_frame.pack_propagate(False)
     
-    # Frame interno para el contenido
-    wrapper = ctk.CTkFrame(main_frame, fg_color=st["bg"], corner_radius=14, 
-                          width=TOAST_W-12, height=TOAST_H-12)
+    # Frame interno
+    wrapper = ctk.CTkFrame(main_frame, fg_color=st["bg"], corner_radius=14, width=TOAST_W-12, height=TOAST_H-12)
     wrapper.pack_propagate(False)
-    wrapper.pack(fill="both", expand=False, padx=6, pady=(6, 4))  # Más padding abajo para la sombra
+    wrapper.pack(fill="both", expand=False, padx=6, pady=(6, 4))
 
-    # Frame del icono con círculo perfecto
+    # Frame del icono
     icon_frame = ctk.CTkFrame(wrapper, fg_color=st["bg"], width=56, height=56)
     icon_frame.pack_propagate(False)
     icon_frame.pack(side="left", padx=(12, 16), pady=12)
 
-    # Canvas para el círculo perfectamente redondo
-    dot_size = 48  # Tamaño del círculo
+    # Canvas para el círculo
+    dot_size = 48
     dot = tk.Canvas(icon_frame, width=56, height=56, highlightthickness=0, bg=st["bg"])
     
-    # Calcular posición para centrar perfectamente
     circle_x1 = (56 - dot_size) / 2
     circle_y1 = (56 - dot_size) / 2
     circle_x2 = circle_x1 + dot_size
     circle_y2 = circle_y1 + dot_size
     
-    # Dibujar círculo perfectamente redondo
-    dot.create_oval(circle_x1, circle_y1, circle_x2, circle_y2, 
-                   fill=st["dot"], outline=st["dot"], width=0)
+    dot.create_oval(circle_x1, circle_y1, circle_x2, circle_y2, fill=st["dot"], outline=st["dot"], width=0)
     
-    # Calcular posición para centrar el emoji
     text_x = 56 / 2
     text_y = 56 / 2
     
-    dot_text = dot.create_text(text_x, text_y, text=st["icon"], 
-                              font=("Segoe UI Emoji", 16),
-                              fill="#FFFFFF")
+    dot.create_text(text_x, text_y, text=st["icon"], font=("Segoe UI Emoji", 16), fill="#FFFFFF")
     dot.pack(fill="both", expand=True)
 
     # Contenedor de texto
@@ -164,44 +147,43 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
     text_container.pack(side="left", fill="both", expand=True, pady=12, padx=(0, 12))
 
     if titulo:
-        lbl_title = ctk.CTkLabel(text_container, text=titulo, font=("Segoe UI", 12, "bold"), 
-                                text_color="#FFFFFF", anchor="w")
+        lbl_title = ctk.CTkLabel(text_container, text=titulo, font=("Segoe UI", 12, "bold"), text_color="#FFFFFF", anchor="w")
         lbl_title.pack(fill="x", pady=(0, 2))
-        lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 11), 
-                              text_color="#C7CCD1", wraplength=TOAST_W-140, 
-                              anchor="w", justify="left")
+        lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 11), text_color="#C7CCD1", wraplength=TOAST_W-140, anchor="w", justify="left")
         lbl_msg.pack(fill="both")
     else:
-        lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 12), 
-                              text_color="#E6E9EE", wraplength=TOAST_W-140, 
-                              anchor="w", justify="left")
+        lbl_msg = ctk.CTkLabel(text_container, text=mensaje, font=("Segoe UI", 12), text_color="#E6E9EE", wraplength=TOAST_W-140, anchor="w", justify="left")
         lbl_msg.pack(fill="both")
 
-    # Función para cerrar la notificación al hacer click
     def close_toast(e=None):
         if toast.winfo_exists():
             with _toast_lock:
                 if toast in _active_toasts:
                     _active_toasts.remove(toast)
-            _animate_out_and_destroy(immediate=True)
+            try:
+                toast.destroy()
+            except:
+                pass
+            _reposition_toasts()
     
-    # Bind click para cerrar a todos los elementos
-    wrapper.bind("<Button-1>", close_toast)
-    text_container.bind("<Button-1>", close_toast)
-    lbl_msg.bind("<Button-1>", close_toast)
+    # Bind click para cerrar
+    for widget in [wrapper, text_container, lbl_msg, icon_frame, dot, main_frame, shadow_frame]:
+        try:
+            widget.bind("<Button-1>", close_toast)
+        except:
+            pass
     if titulo:
-        lbl_title.bind("<Button-1>", close_toast)
-    icon_frame.bind("<Button-1>", close_toast)
-    dot.bind("<Button-1>", close_toast)
-    main_frame.bind("<Button-1>", close_toast)
-    shadow_frame.bind("<Button-1>", close_toast)
+        try:
+            lbl_title.bind("<Button-1>", close_toast)
+        except:
+            pass
 
     toast.update_idletasks()
-
     _position_toast_window(toast, width=TOAST_W, height=TOAST_H, offset_index=offset_index)
+    
     try:
         toast.attributes("-alpha", 0.0)
-    except Exception:
+    except:
         pass
 
     with _toast_lock:
@@ -209,58 +191,33 @@ def mostrar_toast(mensaje, tipo="info", duracion=3200, titulo=None):
 
     def _animate_in():
         try:
-            steps = 6
-            geom = toast.geometry()
-            parts = geom.split('+')
-            base_x = int(parts[1]) if len(parts) > 1 else toast.winfo_x()
-            base_y = int(parts[2]) if len(parts) > 2 else toast.winfo_y()
-            
-            for i in range(steps):
-                frac = (i + 1) / steps
-                y_offset = int((1 - frac) * 20)
-                y = base_y + y_offset
-                alpha = frac
-                
+            for i in range(6):
+                alpha = (i + 1) / 6
                 try:
-                    toast.geometry(f"{TOAST_W}x{TOAST_H}+{base_x}+{y}")
                     toast.attributes("-alpha", alpha)
-                except Exception:
+                except:
                     pass
-                toast.update_idletasks()
                 time.sleep(0.02)
-        except Exception:
+        except:
             pass
 
-    def _animate_out_and_destroy(immediate=False):
-        if not immediate:
-            time.sleep(duracion / 1000.0)
+    def _animate_out_and_destroy():
+        time.sleep(duracion / 1000.0)
         try:
             for i in range(5):
                 alpha = max(0.0, 1 - (i + 1) / 5)
                 try:
                     toast.attributes("-alpha", alpha)
-                except Exception:
+                except:
                     pass
                 time.sleep(0.03)
-        except Exception:
+        except:
             pass
-        try:
-            toast.destroy()
-        except Exception:
-            pass
-        with _toast_lock:
-            if toast in _active_toasts:
-                _active_toasts.remove(toast)
-        try:
-            _reposition_toasts()
-        except Exception:
-            pass
+        close_toast()
 
     threading.Thread(target=_animate_in, daemon=True).start()
-    
-    # Solo aplicar cierre automático si no se hizo click
-    if not hasattr(toast, '_manually_closed'):
-        threading.Thread(target=_animate_out_and_destroy, daemon=True).start()
+    threading.Thread(target=_animate_out_and_destroy, daemon=True).start()
+
 # ANIMACIONES OPTIMIZADAS
 def simple_button_hover(button, is_enter=True):
     if is_enter:
@@ -405,17 +362,323 @@ def confirmar_salida(titulo="Confirmar salida", mensaje="¿Deseas salir de la ap
     except Exception:
         pass
 
-    # Fade in rápido
     fade_transition(confirm, 1.0, 0.15)
-
     confirm.wait_window()
     return result["value"]
 
-# ========= NUEVAS FUNCIONES PARA INVENTARIO =========
+
+
+# ========= FUNCIONES CORREGIDAS PARA INVENTARIO =========
 
 # Lista de códigos de clínica estáticos
 CODIGOS_CLINICAS = ["0001", "0011", "0024", "0002", "0031", "0014", "0017", "0018", "0003"]
+NOMBRES_CLINICAS = {
+    "0001": "HEALTHY MATRIZ",
+    "0011": "PLANTA IBAGUE",
+    "0024": "SEVIN DRUMMOND",
+    "0002": "SEATECH",
+    "0031": "CLINICA AZUL MEDPLUS",
+    "0014": "BRUNE RETAIL",
+    "0017": "CARRITO MEDICADIZ",
+    "0018": "CARRITO KERALTY",
+    "0003": "ASOCAÑA CALI"
+}
+def crear_carpeta_inventario():
+    """Crea una carpeta única en Escritorio con el formato solicitado."""
 
+    # Ruta del escritorio en español
+    escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
+    if not os.path.isdir(escritorio):
+        # fallback por si algunos equipos usan "Desktop"
+        escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
+
+    fecha = datetime.now().strftime("%Y-%m-%d")
+    nombre_carpeta = f"Informes Inventario de stock {fecha}"
+
+    carpeta_inventario = os.path.join(escritorio, nombre_carpeta)
+
+    os.makedirs(carpeta_inventario, exist_ok=True)
+
+    return carpeta_inventario
+
+def obtener_archivo_mas_reciente(carpeta):
+    archivos = []
+    for nombre in os.listdir(carpeta):
+        if nombre.lower().startswith("est31100") and nombre.lower().endswith((".xlsx", ".xls")):
+            ruta = os.path.join(carpeta, nombre)
+            archivos.append((ruta, os.path.getmtime(ruta)))
+    if not archivos:
+        return None
+    archivos.sort(key=lambda x: x[1], reverse=True)
+    return archivos[0][0]
+
+
+def obtener_carpeta_descargas():
+
+    # ==============================
+    # 1. CACHE (si ya se detectó antes)
+    # ==============================
+    cache_file = "descargas_cache.json"
+    try:
+        if os.path.exists(cache_file):
+            with open(cache_file, "r", encoding="utf8") as f:
+                cache = json.load(f)
+                ruta_cache = cache.get("descargas")
+                if ruta_cache and os.path.isdir(ruta_cache):
+                    print(f"📌 Usando ruta guardada (cache): {ruta_cache}")
+                    return ruta_cache
+    except Exception:
+        pass
+
+    # ==============================================
+    # 2. RUTA PERSONALIZADA DETECTADA EN TU EMPRESA
+    # ==============================================
+    rutas_comunes_empresa = [
+        r"O:\perfil",
+        r"O:\usuarios",
+        r"O:\user",
+        r"O:\home",
+        r"P:\perfil",
+        r"P:\usuarios",
+        r"S:\perfil",
+        r"S:\usuarios"
+    ]
+
+    # Buscar patrones típicos corporativos
+    for disco in "OPQRSTUVWXYZ":
+        raiz = f"{disco}:\\"
+        if not os.path.exists(raiz):
+            continue
+
+        for root, dirs, files in os.walk(raiz):
+            if re.search(r'(Descargas|Downloads)$', root, re.IGNORECASE):
+                print(f"🔍 Carpeta de descargas encontrada en red: {root}")
+                _guardar_cache_descargas(root)
+                return root
+
+    # =============================================================
+    # 3. Detectar carpeta redirigida REAL de Windows (shell folders)
+    # =============================================================
+    try:
+        import winreg
+
+        keys = [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        ]
+
+        for key in keys:
+            try:
+                reg = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key)
+                ruta = winreg.QueryValueEx(reg, "Downloads")[0]
+
+                # Expandir variables de entorno (%USERPROFILE%)
+                ruta = os.path.expandvars(ruta)
+
+                if os.path.isdir(ruta):
+                    print(f"📌 Detectada carpeta redirigida por Windows: {ruta}")
+                    _guardar_cache_descargas(ruta)
+                    return ruta
+
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # ============================
+    # 4. Exploración multi-disco
+    # ============================
+    nombres = ["Descargas", "Downloads"]
+
+    for disco in "CDEFGHIJKLMNOPQRSTUVWXYZ":
+        raiz = f"{disco}:\\"
+        if not os.path.exists(raiz):
+            continue
+
+        for root, dirs, _ in os.walk(raiz):
+            for carpeta in dirs:
+                if carpeta in nombres:
+                    ruta_final = os.path.join(root, carpeta)
+                    print(f"🔍 Encontrada: {ruta_final}")
+                    _guardar_cache_descargas(ruta_final)
+                    return ruta_final
+
+    # ============================
+    # 5. Fallback final
+    # ============================
+    fallback = os.path.join(os.path.expanduser("~"), "Downloads")
+    print(f"⚠️ Usando fallback: {fallback}")
+    _guardar_cache_descargas(fallback)
+    return fallback
+
+def _guardar_cache_descargas(ruta):
+    """ Guarda la ruta válida para acelerar detecciones futuras """
+    try:
+        with open("descargas_cache.json", "w", encoding="utf8") as f:
+            json.dump({"descargas": ruta}, f)
+    except Exception:
+        pass
+def limpiar_carpeta_descargas():
+    """Elimina archivos Excel antiguos de inventario de la carpeta de descargas"""
+    try:
+        carpeta_descargas = obtener_carpeta_descargas()
+        archivos_eliminados = 0
+        
+        for archivo in os.listdir(carpeta_descargas):
+            ruta_archivo = os.path.join(carpeta_descargas, archivo)
+            # Buscar archivos que contengan EST31100 con cualquier extensión
+            if ('EST31100' in archivo or 'Inventario_Clinica_' in archivo):
+                try:
+                    os.remove(ruta_archivo)
+                    archivos_eliminados += 1
+                    print(f"🗑️ Eliminado archivo antiguo: {archivo}")
+                except Exception as e:
+                    print(f"⚠️ No se pudo eliminar {archivo}: {e}")
+        
+        print(f"🧹 Total de archivos antiguos eliminados: {archivos_eliminados}")
+        return archivos_eliminados
+        
+    except Exception as e:
+        print(f"⚠️ Error limpiando carpeta descargas: {e}")
+        return 0
+def obtener_archivo_mas_reciente(carpeta, patrones=None):
+    if patrones is None:
+        patrones = ['EST31100*', '*.xlsx', '*.xls']
+    archivos = []
+    for patron in patrones:
+        archivos.extend(glob.glob(os.path.join(carpeta, patron)))
+    if not archivos:
+        return None
+    # ordenar por fecha de modificación (más reciente primero)
+    archivos = sorted(archivos, key=os.path.getmtime, reverse=True)
+    return archivos[0]
+
+def esperar_archivo_descargado(carpeta_descargas, tiempo_maximo=5, poll_interval=0.8):
+    tiempo_inicio = time.time()
+    if not carpeta_descargas or not os.path.isdir(carpeta_descargas):
+        print(f"Carpeta de descargas inválida: {carpeta_descargas}")
+        try:
+            mostrar_toast("Carpeta de descargas inválida", tipo="error", titulo="Error")
+        except Exception:
+            pass
+        return None
+
+    print(f"⏳ Esperando archivo en: {carpeta_descargas} (max {tiempo_maximo}s)")
+    ultimo_encontrado = None
+    while time.time() - tiempo_inicio < tiempo_maximo:
+        candidato = obtener_archivo_mas_reciente(carpeta_descargas)
+        if candidato and candidato != ultimo_encontrado:
+            # comprobar estabilidad y que no sea temporal (.crdownload / .part)
+            ruta_final = candidato
+            if ruta_final.endswith('.crdownload') or ruta_final.endswith('.part'):
+                posible = ruta_final.rsplit('.', 1)[0]
+                if os.path.exists(posible):
+                    ruta_final = posible
+            if os.path.exists(ruta_final) and _archivo_estable(ruta_final):
+                print(f"📥 Archivo detectado: {os.path.basename(ruta_final)}")
+                try:
+                    mostrar_toast(f"Archivo detectado: {os.path.basename(ruta_final)}", tipo="info", titulo="Descarga")
+                except Exception:
+                    pass
+                return ruta_final
+            ultimo_encontrado = candidato
+        time.sleep(poll_interval)
+    print("❌ No se detectó archivo descargado en el tiempo esperado")
+    # fallback: buscar EST31100 por si Windows lo listó con retraso
+    respaldo = glob.glob(os.path.join(carpeta_descargas, 'EST31100*'))
+    if respaldo:
+        candidato = max(respaldo, key=os.path.getmtime)
+        if _archivo_estable(candidato):
+            print(f"⚠️ Usando archivo de respaldo: {os.path.basename(candidato)}")
+            return candidato
+    return None
+
+def _archivo_estable(ruta):
+    """Devuelve True si el archivo existe, tiene tamaño > 0 y puede abrirse para lectura (no bloqueado)."""
+    try:
+        if not os.path.exists(ruta):
+            return False
+        tam1 = os.path.getsize(ruta)
+        time.sleep(0.8)
+        tam2 = os.path.getsize(ruta)
+        if tam1 == tam2 and tam1 > 0:
+            # Intentar abrir para confirmar que no está bloqueado
+            try:
+                with open(ruta, 'rb'):
+                    pass
+                return True
+            except Exception:
+                return False
+        return False
+    except Exception:
+        return False
+
+
+def renombrar_y_mover_archivo(archivo_descargado, carpeta_destino, codigo_clinica, indice):
+    try:
+        if not archivo_descargado or not os.path.exists(archivo_descargado):
+            print(f"❌ Archivo descargado no existe: {archivo_descargado}")
+            return None
+
+        fecha = datetime.now().strftime("%Y-%m-%d")
+
+        # Nombre bonito según tabla
+        nombre_clinica = NOMBRES_CLINICAS.get(codigo_clinica, codigo_clinica)
+
+        nombre_nuevo = f"Informe de la clínica {nombre_clinica} del día {fecha}.xlsx"
+
+        ruta_nueva = os.path.join(carpeta_destino, nombre_nuevo)
+
+        if os.path.exists(ruta_nueva):
+            try:
+                os.remove(ruta_nueva)
+            except Exception as e:
+                print(f"⚠️ No se pudo reemplazar el archivo existente: {e}")
+
+        shutil.move(archivo_descargado, ruta_nueva)
+
+        print(f"✅ Archivo renombrado y movido: {nombre_nuevo}")
+
+        try:
+            mostrar_toast(f"Archivo movido: {nombre_nuevo}", tipo="success", titulo="Éxito")
+        except Exception:
+            pass
+
+        return nombre_nuevo
+
+    except Exception as e:
+        print(f"❌ Error renombrando/moviendo archivo: {e}")
+        return None
+
+def debug_descargas():
+    """Función para debug: mostrar qué archivos hay en descargas"""
+    carpeta_descargas = obtener_carpeta_descargas()
+    print(f"\n🔍 DEBUG - Archivos en descargas:")
+    archivos_encontrados = False
+    for archivo in os.listdir(carpeta_descargas):
+        if 'EST31100' in archivo:
+            ruta = os.path.join(carpeta_descargas, archivo)
+            tamaño = os.path.getsize(ruta)
+            mod_time = time.ctime(os.path.getmtime(ruta))
+            print(f"   📄 {archivo} - {tamaño} bytes - {mod_time}")
+            archivos_encontrados = True
+    
+    if not archivos_encontrados:
+        print("   ℹ️ No se encontraron archivos EST31100")
+    
+    # Mostrar todos los archivos Excel también
+    print(f"\n🔍 DEBUG - Todos los archivos Excel en descargas:")
+    excel_encontrados = False
+    for archivo in os.listdir(carpeta_descargas):
+        if archivo.endswith(('.xlsx', '.xls', '.síax', '.síac')):
+            ruta = os.path.join(carpeta_descargas, archivo)
+            tamaño = os.path.getsize(ruta)
+            mod_time = time.ctime(os.path.getmtime(ruta))
+            print(f"   📊 {archivo} - {tamaño} bytes - {mod_time}")
+            excel_encontrados = True
+    
+    if not excel_encontrados:
+        print("   ℹ️ No se encontraron archivos Excel")
 def descargar_informes_inventario():
     print("🏁 Iniciando descarga de informes de inventario...")
     mostrar_toast("Iniciando descarga de informes...", tipo="info", titulo="Descarga")
@@ -424,19 +687,31 @@ def descargar_informes_inventario():
         try:
             print("🔗 Abriendo sistema de inventario en Edge...")
             subprocess.Popen(["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", URL_RETIRADA])
-            time.sleep(10)
+            time.sleep(12)
+            debug_descargas()
+            # Crear carpeta específica para esta ejecución
+            carpeta_inventario = crear_carpeta_inventario()
+            print(f"📁 CARPETA CREADA EN: {carpeta_inventario}")
+            
+            # Limpiar descargas anteriores
+            limpiar_carpeta_descargas()
+            
+            carpeta_descargas = obtener_carpeta_descargas()
+            archivos_descargados = []
             
             # Proceso para descargar 9 informes (uno por cada clínica)
             for i, codigo_clinica in enumerate(CODIGOS_CLINICAS):
-                print(f"📥 Descargando informe {i+1}/9 para clínica {codigo_clinica}...")
+                print(f"\n{'='*50}")
+                print(f"📥 DESCARGANDO INFORME {i+1}/9 - CLÍNICA {codigo_clinica}")
+                print(f"{'='*50}")
                 
                 # Buscar y hacer clic en el campo de unidad
-                if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6):
-                    mostrar_toast("No se encontró el campo 'unidad'.", tipo="warning", titulo="Campo no encontrado")
+                if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6, intentos=2):
+                    print(f"❌ No se pudo encontrar el campo 'unidad' para clínica {codigo_clinica}")
                     continue
                 
                 try:
-                    time.sleep(2)
+                    time.sleep(1)
                     pyautogui.typewrite(codigo_clinica)
                     time.sleep(3)
                     x, y = pyautogui.position()
@@ -444,195 +719,258 @@ def descargar_informes_inventario():
                     pyautogui.click()
                     print(f"✅ Código de clínica {codigo_clinica} ingresado correctamente.")
                 except Exception as e:
-                    print(f"Error al ingresar código de clínica {codigo_clinica}: {e}")
+                    print(f"❌ Error al ingresar código de clínica {codigo_clinica}: {e}")
                     continue
+                
                 time.sleep(3)
+                
                 # Llenar los campos necesarios para el informe
-                if not buscar_y_click("tipo_costo.png", "tipo_costo"):
-                    mostrar_toast("No se encontró 'tipo_costo.png'.", tipo="warning", titulo="Botón no encontrado")
+                if not buscar_y_click("tipo_costo.png", "tipo_costo", intentos=2):
+                    print(f"❌ No se encontró 'tipo_costo.png' para clínica {codigo_clinica}")
                     continue
                 
-                time.sleep(5)
+                time.sleep(1)
                 pyautogui.typewrite("01")
-                time.sleep(5)
+                time.sleep(2)
                 x, y = pyautogui.position()
                 pyautogui.moveTo(x, y + 40, duration=0.5)
                 pyautogui.click()
-                time.sleep(5)
+                time.sleep(1)
                 
-                if not buscar_y_click("nivel_totalizacion.png", "nivel_totalizacion", confianza=0.6):
-                    mostrar_toast("No se encontró 'nivel_totalizacion.png'.", tipo="warning", titulo="Botón no encontrado")
+                if not buscar_y_click("nivel_totalizacion.png", "nivel_totalizacion", confianza=0.6, intentos=2):
+                    print(f"❌ No se encontró 'nivel_totalizacion.png' para clínica {codigo_clinica}")
                     continue
                 
-                time.sleep(5)
+                time.sleep(2)
                 x, y = pyautogui.position()
                 pyautogui.moveTo(x, y + 40, duration=0.5)
                 pyautogui.click()
-                time.sleep(5)
+                time.sleep(1)
                 
-                if not buscar_y_click("producto_inicial.png", "producto_inicial"):
-                    mostrar_toast("No se encontró 'producto_inicial.png'.", tipo="warning", titulo="Botón no encontrado")
+                if not buscar_y_click("producto_inicial.png", "producto_inicial", intentos=2):
+                    print(f"❌ No se encontró 'producto_inicial.png' para clínica {codigo_clinica}")
                     continue
                 
-                time.sleep(5)
+                time.sleep(1)
                 pyautogui.typewrite("1")
-                time.sleep(5)
+                time.sleep(1)
                 x, y = pyautogui.position()
                 pyautogui.moveTo(x, y + 40, duration=0.5)
                 pyautogui.click()
-                time.sleep(5)
+                time.sleep(1)
                 
-                if not buscar_y_click("producto_final.png", "producto_final"):
-                    mostrar_toast("No se encontró 'producto_final.png'.", tipo="warning", titulo="Botón no encontrado")
+                if not buscar_y_click("producto_final.png", "producto_final", intentos=2):
+                    print(f"❌ No se encontró 'producto_final.png' para clínica {codigo_clinica}")
                     continue
                 
-                time.sleep(5)
+                time.sleep(1)
                 pyautogui.typewrite("5")
-                time.sleep(5)
+                time.sleep(1)
                 x, y = pyautogui.position()
                 pyautogui.moveTo(x, y + 40, duration=0.5)
                 pyautogui.click()
-                time.sleep(5)
+                time.sleep(1)
                 
                 # Buscar y hacer clic en el botón de descarga XLSX
-                if not buscar_y_click("generar_xlsx.png", "generar_xlsx", confianza=0.7):
-                    mostrar_toast("No se encontró 'generar_xlsx.png'.", tipo="warning", titulo="Botón no encontrado")
+                if not buscar_y_click("generar_xlsx.png", "generar_xlsx", confianza=0.9, intentos=2):
+                    print(f"❌ No se encontró 'generar_xlsx.png' para clínica {codigo_clinica}")
                     continue
                 
                 print(f"✅ Descarga iniciada para clínica {codigo_clinica}")
-                time.sleep(8)  # Esperar a que se complete la descarga
+                
+                # Esperar a que se complete la descarga
+                print("⏳ Esperando a que se complete la descarga...")
+                time.sleep(2)
+                
+                # Buscar el archivo descargado
+                archivo_descargado = esperar_archivo_descargado(carpeta_descargas, tiempo_maximo=5)
+                
+                if archivo_descargado:
+                    # Renombrar y mover el archivo
+                    archivo_renombrado = renombrar_y_mover_archivo(archivo_descargado, carpeta_inventario, codigo_clinica, i)
+                    if archivo_renombrado:
+                        archivos_descargados.append(archivo_renombrado)
+                        print(f"✅ ÉXITO: Archivo procesado para clínica {codigo_clinica}")
+                    else:
+                        print(f"❌ FALLO: No se pudo renombrar archivo para clínica {codigo_clinica}")
+                else:
+                    print(f"❌ FALLO: No se descargó archivo para clínica {codigo_clinica}")
                 
                 # Recargar la página para la siguiente clínica (solo si no es la última)
                 if i < len(CODIGOS_CLINICAS) - 1:
+                    print("🔄 Recargando página para siguiente clínica...")
                     try:
                         pyautogui.hotkey("ctrl", "r")
-                        time.sleep(10)  # Esperar a que la página se recargue completamente
+                        time.sleep(12)
                     except Exception:
                         try:
                             pyautogui.press("f5")
-                            time.sleep(10)
+                            time.sleep(12)
                         except Exception:
                             pass
+            
+            # RESUMEN FINAL
+            print(f"\n{'='*60}")
+            print("🎯 RESUMEN DE DESCARGA")
+            print(f"{'='*60}")
+            print(f"📁 Carpeta destino: {carpeta_inventario}")
+            print(f"📊 Archivos descargados: {len(archivos_descargados)}/9")
+            
+            if archivos_descargados:
+                print("✅ Descarga completada exitosamente")
+                mostrar_toast(f"Descarga completada: {len(archivos_descargados)}/9 archivos", tipo="success", titulo="Éxito")
                 
-                mostrar_toast(f"Informe {i+1}/9 descargado (Clínica {codigo_clinica})", 
-                             tipo="success", titulo="Progreso")
-            
-            print("✅ Descarga de informes completada")
-            mostrar_toast("Descarga de 9 informes completada ✅", tipo="success", titulo="Éxito")
-            
-            # Habilitar botón de procesar
-            root.after(0, lambda: btn_procesar_informes.configure(state="normal"))
-            
+                # Guardar la ruta de la carpeta para el procesamiento
+                global carpeta_inventario_actual
+                carpeta_inventario_actual = carpeta_inventario
+                
+                # Actualizar interfaz con información
+                root.after(0, lambda: actualizar_info_inventario(f"Carpeta: {os.path.basename(carpeta_inventario)}", f"Archivos: {len(archivos_descargados)}/9"))
+                
+                # Habilitar botón de procesar si hay archivos
+                if archivos_descargados:
+                    root.after(0, lambda: btn_procesar_informes.configure(state="normal"))
+            else:
+                print("❌ No se descargó ningún archivo")
+                mostrar_toast("No se descargaron archivos. Revisa el proceso.", tipo="warning", titulo="Advertencia")
+                
         except Exception as e:
             print(f"❌ Error en descarga de informes: {e}")
             mostrar_toast(f"Error en descarga de informes:\n{e}", tipo="error", titulo="Error")
         finally:
             # Reactivar botón
             root.after(0, lambda: btn_descargar_informes.configure(state="normal"))
+            print("🔄 Botón 'Descargar Informes' REACTIVADO")
     
     btn_descargar_informes.configure(state="disabled")
     threading.Thread(target=_proceso_descarga, daemon=True).start()
+
 def procesar_informes_inventario():
     print("🔄 Procesando informes descargados...")
-    mostrar_toast("Procesando informes descargados...", tipo="info", titulo="Procesamiento")
-    
-    def _proceso_procesamiento():
+    mostrar_toast("Procesando informes...", tipo="info", titulo="Procesamiento")
+
+    def _proceso():
         try:
-            # Ruta donde se descargan los informes
-            carpeta_descargas = os.path.join(os.path.expanduser("~"), "Downloads")
-            
-            # Buscar archivos Excel recientes
-            archivos_excel = []
-            for archivo in os.listdir(carpeta_descargas):
-                if archivo.endswith(('.xlsx', '.xls')) and any(keyword in archivo.lower() for keyword in ['inventario', 'stock', 'posicion', 'estoque']):
-                    archivos_excel.append(os.path.join(carpeta_descargas, archivo))
-            
-            if len(archivos_excel) < 9:
-                mostrar_toast(f"Solo se encontraron {len(archivos_excel)} archivos. Se esperaban 9.", 
-                             tipo="warning", titulo="Advertencia")
-                # Continuar con los que se encontraron
-                if len(archivos_excel) == 0:
-                    mostrar_toast("No se encontraron archivos para procesar", tipo="error", titulo="Error")
+            # 1. Determinar carpeta donde buscar
+            if 'carpeta_inventario_actual' in globals() and os.path.exists(carpeta_inventario_actual):
+                carpeta_busqueda = carpeta_inventario_actual
+            else:
+                escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
+                if not os.path.isdir(escritorio):
+                    escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
+
+                carpetas = []
+                for item in os.listdir(escritorio):
+                    ruta = os.path.join(escritorio, item)
+                    if os.path.isdir(ruta) and item.startswith("Informes Inventario de stock"):
+                        carpetas.append((ruta, os.path.getmtime(ruta)))
+
+                if carpetas:
+                    carpetas.sort(key=lambda x: x[1], reverse=True)
+                    carpeta_busqueda = carpetas[0][0]
+                else:
+                    mostrar_toast("No se encontró carpeta de inventarios", tipo="error", titulo="Error")
                     return
-            
-            # Tomar los 9 archivos más recientes (o los que haya)
-            archivos_excel = sorted(archivos_excel, key=os.path.getmtime, reverse=True)[:9]
-            
-            datos_combinados = []
-            
-            for i, archivo in enumerate(archivos_excel):
-                print(f"📊 Procesando archivo {i+1}/{len(archivos_excel)}: {os.path.basename(archivo)}")
-                
+
+            # 2. Buscar archivos Excel procesables
+            archivos_excel = []
+            for archivo in os.listdir(carpeta_busqueda):
+                if archivo.startswith("Informe de la clínica") and archivo.endswith(".xlsx"):
+                    archivos_excel.append(os.path.join(carpeta_busqueda, archivo))
+
+            if not archivos_excel:
+                mostrar_toast("No hay informes para procesar", tipo="warning", titulo="Advertencia")
+                return
+
+            resumen = []
+
+            for archivo in archivos_excel:
                 try:
-                    # Leer el archivo Excel
-                    df = pd.read_excel(archivo)
-                    
-                    # Definir columnas importantes para inventario
-                    # Ajusta estas columnas según la estructura real de tus archivos
-                    posibles_columnas_importantes = [
-                        'Código', 'Código Producto', 'Producto', 'Nombre Producto', 
-                        'Cantidad', 'Stock', 'Stock Actual', 'Existencia',
-                        'Ubicación', 'Almacén', 'Unidad', 'Clínica'
-                    ]
-                    
-                    # Filtrar solo las columnas importantes que existan en el archivo
-                    columnas_existentes = [col for col in posibles_columnas_importantes if col in df.columns]
-                    
-                    if columnas_existentes:
-                        # Agregar columna con el nombre del archivo de origen
-                        df_filtrado = df[columnas_existentes].copy()
-                        df_filtrado['Archivo_Origen'] = os.path.basename(archivo)
-                        datos_combinados.append(df_filtrado)
-                        print(f"✅ Procesadas {len(df_filtrado)} filas del archivo {os.path.basename(archivo)}")
+                    df = pd.read_excel(archivo, header=None)
+
+                    # ---------------------------
+                    # A) EXTRAER FECHA DE INVENTARIO
+                    # ---------------------------
+                    fecha_inventario = None
+
+                    for fila in df.values:
+                        for celda in fila:
+                            if isinstance(celda, str) and "Fecha del Inventario" in celda:
+                                # buscar fecha dentro del texto
+                                encontrado = re.search(r"(\d{2}/\d{2}/\d{4})", " ".join(map(str, fila)))
+                                if encontrado:
+                                    fecha_inventario = datetime.strptime(encontrado.group(1), "%d/%m/%Y").strftime("%Y-%m-%d")
+                                break
+
+                    if not fecha_inventario:
+                        fecha_inventario = datetime.now().strftime("%Y-%m-%d")
+
+                    # ---------------------------
+                    # B) EXTRAER CLÍNICA DEL NOMBRE DEL ARCHIVO
+                    # ---------------------------
+                    nombre = os.path.basename(archivo)
+
+                    match = re.search(r"Informe de la clínica (.+?) del día", nombre)
+                    if match:
+                        nombre_clinica = match.group(1).strip()
                     else:
-                        print(f"⚠️ No se encontraron columnas importantes en {archivo}")
-                        # Si no encuentra columnas específicas, usar todas las columnas
-                        df_filtrado = df.copy()
-                        df_filtrado['Archivo_Origen'] = os.path.basename(archivo)
-                        datos_combinados.append(df_filtrado)
-                        print(f"✅ Usadas todas las {len(df_filtrado)} columnas del archivo {os.path.basename(archivo)}")
-                        
+                        nombre_clinica = "Desconocida"
+
+                    # ---------------------------
+                    # C) ENCONTRAR TOTAL DEL STOCK
+                    # ---------------------------
+                    patrones = [
+                        "total del stock",
+                        "valor total del stock",
+                        "total stock",
+                        "stock total",
+                        "valor stock",
+                        "stock",
+                    ]
+
+                    total_stock = 0
+
+                    for i in range(len(df)):
+                        for j in range(len(df.columns)):
+                            celda = str(df.iat[i, j]).lower()
+                            for patron in patrones:
+                                if patron in celda:
+                                    # El valor numérico suele estar en la columna siguiente
+                                    try:
+                                        valor = df.iat[i, j+1]
+                                        valor = str(valor).replace(",", "").replace("$", "").strip()
+                                        total_stock = float(valor)
+                                    except:
+                                        pass
+                                    break
+
+                    resumen.append([fecha_inventario, nombre_clinica, total_stock, ""])
+
                 except Exception as e:
                     print(f"❌ Error procesando {archivo}: {e}")
-                    mostrar_toast(f"Error procesando {os.path.basename(archivo)}", tipo="warning", titulo="Advertencia")
                     continue
-            
-            if datos_combinados:
-                # Combinar todos los datos
-                df_final = pd.concat(datos_combinados, ignore_index=True)
-                
-                # Eliminar duplicados exactos si es necesario
-                df_final = df_final.drop_duplicates()
-                
-                # Crear nombre del archivo con fecha actual
-                fecha_actual = datetime.now().strftime("%Y-%m-%d")
-                nombre_archivo = f"Inventario de Stock {fecha_actual}.xlsx"
-                
-                # Guardar el archivo combinado
-                ruta_guardado = os.path.join(carpeta_descargas, nombre_archivo)
-                df_final.to_excel(ruta_guardado, index=False)
-                
-                print(f"✅ Archivo combinado guardado: {ruta_guardado}")
-                print(f"📊 Total de registros consolidados: {len(df_final)}")
-                
-                mostrar_toast(f"Inventario consolidado guardado:\n{nombre_archivo}\nTotal: {len(df_final)} registros", 
-                             tipo="success", titulo="Proceso Completado")
-                
-                # Actualizar la interfaz con la información del archivo creado
-                root.after(0, lambda: actualizar_info_inventario(nombre_archivo, len(df_final)))
-                
-            else:
-                mostrar_toast("No se pudieron procesar los archivos", tipo="error", titulo="Error")
-                
+
+            # ---------------------------
+            # D) GUARDAR RESUMEN FINAL
+            # ---------------------------
+            df_final = pd.DataFrame(resumen, columns=["fecha", "clinica", "inventario", "compra"])
+
+            nombre_salida = f"Resumen Inventario {datetime.now().strftime('%Y-%m-%d')}.xlsx"
+            ruta_salida = os.path.join(carpeta_busqueda, nombre_salida)
+            df_final.to_excel(ruta_salida, index=False)
+
+            print(f"📁 Resumen generado: {ruta_salida}")
+            mostrar_toast("Resumen generado con éxito", tipo="success", titulo="Completado")
+
         except Exception as e:
-            print(f"❌ Error en procesamiento de informes: {e}")
-            mostrar_toast(f"Error en procesamiento:\n{e}", tipo="error", titulo="Error")
+            print(f"❌ Error general: {e}")
+            mostrar_toast("Error procesando inventario", tipo="error", titulo="Error")
         finally:
-            # Reactivar botón
             root.after(0, lambda: btn_procesar_informes.configure(state="normal"))
-    
+
     btn_procesar_informes.configure(state="disabled")
-    threading.Thread(target=_proceso_procesamiento, daemon=True).start()
+    threading.Thread(target=_proceso, daemon=True).start()
+
 
 def actualizar_info_inventario(nombre_archivo="", total_items=0):
     try:
@@ -642,15 +980,11 @@ def actualizar_info_inventario(nombre_archivo="", total_items=0):
         print(f"Error actualizando info inventario: {e}")
 
 def actualizar_tabla_inventario():
-    # Esta función puede usarse para mostrar los datos procesados en la tabla
-    # Por ahora la dejamos como placeholder
     pass
-
-# ========= FIN NUEVAS FUNCIONES ======================================
 
 # FUNCIONES AUXILIARES ORIGINALES 
 
-def buscar_y_click(imagen, nombre, confianza=0.9, intentos=3, esperar=5):
+def buscar_y_click(imagen, nombre, confianza=0.9, intentos=2, esperar=5):
     for i in range(intentos):
         print(f"🔎 Buscando botón '{nombre}' (Intento {i+1}/{intentos})...")
         try:
@@ -1113,6 +1447,7 @@ def iniciar_proceso():
 try:
     root
 except NameError:
+    silenciar_customtkinter()
     root = ctk.CTk()
     root.title("DataSpectra - Sistema de Inventario")
     root.attributes("-fullscreen", True)
@@ -1622,7 +1957,7 @@ lbl_info_titulo.pack(anchor="w", pady=(10, 5), padx=12)
 
 lbl_info_desc = ctk.CTkLabel(
     info_frame,
-    text="Este proceso automatizado:\n• Descarga 9 informes de inventario (uno por cada clínica)\n• Escribe automáticamente los códigos de cada clínica\n• Llena los campos necesarios y descarga en formato XLSX\n• Combina todos los datos en un solo archivo Excel\n• Guarda el resultado como 'Inventario de Stock {Fecha}'",
+    text="Este proceso automatizado:\n• Descarga 9 informes de inventario (uno por cada clínica)\n• Escribe automáticamente los códigos de cada clínica\n• Llena los campos necesarios y descarga en formato XLSX\n• Combina todos los datos en un solo archivo Excel\n• Guarda el resultado como 'Inventario_Combinado_{Fecha_Hora}'",
     font=("Segoe UI", 12),
     text_color=TEXT_SECOND,
     anchor="w",
