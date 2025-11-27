@@ -17,6 +17,8 @@ from ctypes import wintypes
 import glob
 import string
 import re
+from tkcalendar import DateEntry
+
 
 # === CONFIGURACIÓN ===
 CARPETA_BOTONES = "Buttons"
@@ -39,6 +41,7 @@ unidad_cargada = ""
 carpeta_inventario_actual = ""
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+fecha_personalizada = None
 
 # PALETA DE COLORES
 PRIMARY = "#3A7BD5"
@@ -679,6 +682,97 @@ def debug_descargas():
     
     if not excel_encontrados:
         print("   ℹ️ No se encontraron archivos Excel")
+        # ============================================================
+# SISTEMA DE SELECCIÓN DE FECHA PARA INFORMES DE INVENTARIO
+# ============================================================
+
+def pedir_fecha_informes():
+    """Ventana que pregunta si usar fecha de hoy o personalizada."""
+    global fecha_personalizada
+
+    win = ctk.CTkToplevel(root)
+    win.title("Seleccionar fecha")
+    win.geometry("380x260")
+    win.attributes("-topmost", True)
+    win.configure(fg_color="#0F1724")
+
+    lbl = ctk.CTkLabel(
+        win, 
+        text="¿Deseas descargar los informes\ncon la fecha de HOY o una PERSONALIZADA?",
+        font=("Segoe UI", 15),
+        text_color="white"
+    )
+    lbl.pack(pady=20)
+
+    frame_botones = ctk.CTkFrame(win, fg_color="#0F1724")
+    frame_botones.pack(pady=10)
+
+    def usar_hoy():
+        fecha_personalizada = None
+        win.destroy()
+        descargar_informes_inventario()
+
+    def usar_personalizada():
+        for widget in frame_botones.winfo_children():
+            widget.destroy()
+
+        lbl2 = ctk.CTkLabel(
+            win, 
+            text="Selecciona la fecha:",
+            font=("Segoe UI", 14),
+            text_color="white"
+        )
+        lbl2.pack(pady=10)
+
+        fecha_widget = DateEntry(
+            win,
+            width=16,
+            background="darkblue",
+            foreground="white",
+            borderwidth=2,
+            date_pattern="dd-mm-yyyy"
+        )
+        fecha_widget.pack(pady=8)
+
+        def guardar_fecha():
+            fecha = fecha_widget.get()
+            if fecha:
+                globals()["fecha_personalizada"] = fecha
+            win.destroy()
+            descargar_informes_inventario()
+
+        btn_confirmar = ctk.CTkButton(
+            win,
+            text="Confirmar fecha",
+            fg_color="#3A7BD5",
+            hover_color="#5EA0FF",
+            corner_radius=12,
+            command=guardar_fecha
+        )
+        btn_confirmar.pack(pady=20)
+
+    btn_hoy = ctk.CTkButton(
+        frame_botones,
+        text="Usar fecha HOY",
+        fg_color="#16A34A",
+        hover_color="#22C55E",
+        corner_radius=12,
+        command=usar_hoy,
+        width=140
+    )
+    btn_hoy.pack(side="left", padx=10)
+
+    btn_personalizada = ctk.CTkButton(
+        frame_botones,
+        text="Fecha PERSONALIZADA",
+        fg_color="#2563EB",
+        hover_color="#3B82F6",
+        corner_radius=12,
+        command=usar_personalizada,
+        width=180
+    )
+    btn_personalizada.pack(side="left", padx=10)
+
 def descargar_informes_inventario():
     print("🏁 Iniciando descarga de informes de inventario...")
     mostrar_toast("Iniciando descarga de informes...", tipo="info", titulo="Descarga")
@@ -706,7 +800,7 @@ def descargar_informes_inventario():
                 print(f"{'='*50}")
                 
                 # Buscar y hacer clic en el campo de unidad
-                if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6, intentos=2):
+                if not buscar_y_click("unidad_select.png", "unidad_select", confianza=0.6, intentos=3):
                     print(f"❌ No se pudo encontrar el campo 'unidad' para clínica {codigo_clinica}")
                     continue
                 
@@ -715,7 +809,7 @@ def descargar_informes_inventario():
                     pyautogui.typewrite(codigo_clinica)
                     time.sleep(3)
                     x, y = pyautogui.position()
-                    pyautogui.moveTo(x, y + 50, duration=0.5)
+                    pyautogui.moveTo(x, y + 50)
                     pyautogui.click()
                     print(f"✅ Código de clínica {codigo_clinica} ingresado correctamente.")
                 except Exception as e:
@@ -725,7 +819,7 @@ def descargar_informes_inventario():
                 time.sleep(3)
                 
                 # Llenar los campos necesarios para el informe
-                if not buscar_y_click("tipo_costo.png", "tipo_costo", intentos=2):
+                if not buscar_y_click("tipo_costo.png", "tipo_costo", intentos=3):
                     print(f"❌ No se encontró 'tipo_costo.png' para clínica {codigo_clinica}")
                     continue
                 
@@ -733,46 +827,51 @@ def descargar_informes_inventario():
                 pyautogui.typewrite("01")
                 time.sleep(2)
                 x, y = pyautogui.position()
-                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.moveTo(x, y + 40)
                 pyautogui.click()
                 time.sleep(1)
                 
-                if not buscar_y_click("nivel_totalizacion.png", "nivel_totalizacion", confianza=0.6, intentos=2):
+                if not buscar_y_click("nivel_totalizacion.png", "nivel_totalizacion", confianza=0.6, intentos=3):
                     print(f"❌ No se encontró 'nivel_totalizacion.png' para clínica {codigo_clinica}")
                     continue
                 
                 time.sleep(2)
                 x, y = pyautogui.position()
-                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.moveTo(x, y + 40)
                 pyautogui.click()
                 time.sleep(1)
                 
-                if not buscar_y_click("producto_inicial.png", "producto_inicial", intentos=2):
+                if not buscar_y_click("producto_inicial.png", "producto_inicial", intentos=3):
                     print(f"❌ No se encontró 'producto_inicial.png' para clínica {codigo_clinica}")
                     continue
                 
                 time.sleep(1)
                 pyautogui.typewrite("1")
-                time.sleep(1)
+                time.sleep(2)
                 x, y = pyautogui.position()
-                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.moveTo(x, y + 40)
                 pyautogui.click()
                 time.sleep(1)
                 
-                if not buscar_y_click("producto_final.png", "producto_final", intentos=2):
+                if not buscar_y_click("producto_final.png", "producto_final", intentos=3):
                     print(f"❌ No se encontró 'producto_final.png' para clínica {codigo_clinica}")
                     continue
                 
                 time.sleep(1)
                 pyautogui.typewrite("5")
-                time.sleep(1)
+                time.sleep(2)
                 x, y = pyautogui.position()
-                pyautogui.moveTo(x, y + 40, duration=0.5)
+                pyautogui.moveTo(x, y + 40)
                 pyautogui.click()
                 time.sleep(1)
-                
+                if fecha_personalizada:
+                    fecha_sin_slash = fecha_personalizada.replace("/", "")
+                    buscar_y_click("fecha_campo.png", "campo_fecha", confianza=0.7)
+                    pyautogui.press("backspace", presses=10)
+                    pyautogui.typewrite(fecha_sin_slash)
+                    time.sleep(1)
                 # Buscar y hacer clic en el botón de descarga XLSX
-                if not buscar_y_click("generar_xlsx.png", "generar_xlsx", confianza=0.9, intentos=2):
+                if not buscar_y_click("generar_xlsx.png", "generar_xlsx", confianza=0.9, intentos=3):
                     print(f"❌ No se encontró 'generar_xlsx.png' para clínica {codigo_clinica}")
                     continue
                 
@@ -801,11 +900,11 @@ def descargar_informes_inventario():
                     print("🔄 Recargando página para siguiente clínica...")
                     try:
                         pyautogui.hotkey("ctrl", "r")
-                        time.sleep(12)
+                        time.sleep(7)
                     except Exception:
                         try:
                             pyautogui.press("f5")
-                            time.sleep(12)
+                            time.sleep(7)
                         except Exception:
                             pass
             
@@ -851,7 +950,9 @@ def procesar_informes_inventario():
 
     def _proceso():
         try:
-            # 1. Determinar carpeta donde buscar
+            # ===============================
+            # 1. Determinar carpeta de trabajo
+            # ===============================
             if 'carpeta_inventario_actual' in globals() and os.path.exists(carpeta_inventario_actual):
                 carpeta_busqueda = carpeta_inventario_actual
             else:
@@ -865,14 +966,12 @@ def procesar_informes_inventario():
                     if os.path.isdir(ruta) and item.startswith("Informes Inventario de stock"):
                         carpetas.append((ruta, os.path.getmtime(ruta)))
 
-                if carpetas:
-                    carpetas.sort(key=lambda x: x[1], reverse=True)
-                    carpeta_busqueda = carpetas[0][0]
-                else:
-                    mostrar_toast("No se encontró carpeta de inventarios", tipo="error", titulo="Error")
-                    return
+                carpetas.sort(key=lambda x: x[1], reverse=True)
+                carpeta_busqueda = carpetas[0][0] if carpetas else escritorio
 
-            # 2. Buscar archivos Excel procesables
+            # ===============================
+            # 2. Buscar archivos Excel válidos
+            # ===============================
             archivos_excel = []
             for archivo in os.listdir(carpeta_busqueda):
                 if archivo.startswith("Informe de la clínica") and archivo.endswith(".xlsx"):
@@ -884,65 +983,47 @@ def procesar_informes_inventario():
 
             resumen = []
 
+            # ===============================
+            # 3. Procesar cada informe
+            # ===============================
             for archivo in archivos_excel:
                 try:
                     df = pd.read_excel(archivo, header=None)
 
-                    # ---------------------------
-                    # A) EXTRAER FECHA DE INVENTARIO
-                    # ---------------------------
+                    # A) EXTRAER FECHA DEL INVENTARIO
                     fecha_inventario = None
-
                     for fila in df.values:
-                        for celda in fila:
-                            if isinstance(celda, str) and "Fecha del Inventario" in celda:
-                                # buscar fecha dentro del texto
-                                encontrado = re.search(r"(\d{2}/\d{2}/\d{4})", " ".join(map(str, fila)))
-                                if encontrado:
-                                    fecha_inventario = datetime.strptime(encontrado.group(1), "%d/%m/%Y").strftime("%Y-%m-%d")
-                                break
+                        fila_str = " ".join(map(str, fila))
+                        if "Fecha del Inventario" in fila_str:
+                            match = re.search(r"(\d{2}/\d{2}/\d{4})", fila_str)
+                            if match:
+                                fecha_inventario = datetime.strptime(match.group(1), "%d/%m/%Y").strftime("%d/%m/%Y")
+                            break
 
                     if not fecha_inventario:
-                        fecha_inventario = datetime.now().strftime("%Y-%m-%d")
+                        fecha_inventario = datetime.now().strftime("%d/%m/%Y")
 
-                    # ---------------------------
-                    # B) EXTRAER CLÍNICA DEL NOMBRE DEL ARCHIVO
-                    # ---------------------------
-                    nombre = os.path.basename(archivo)
+                    # B) EXTRAER NOMBRE DE CLÍNICA DEL ARCHIVO
+                    nombre_archivo = os.path.basename(archivo)
+                    match = re.search(r"Informe de la clínica (.+?) del día", nombre_archivo)
+                    nombre_clinica = match.group(1).strip() if match else "Desconocida"
 
-                    match = re.search(r"Informe de la clínica (.+?) del día", nombre)
-                    if match:
-                        nombre_clinica = match.group(1).strip()
-                    else:
-                        nombre_clinica = "Desconocida"
-
-                    # ---------------------------
-                    # C) ENCONTRAR TOTAL DEL STOCK
-                    # ---------------------------
-                    patrones = [
-                        "total del stock",
-                        "valor total del stock",
-                        "total stock",
-                        "stock total",
-                        "valor stock",
-                        "stock",
-                    ]
-
+                    # C) EXTRAER **SEGUNDO** valor del Total del Stock
                     total_stock = 0
+                    patrones = ["total del stock", "valor total del stock", "total stock", "stock total"]
 
                     for i in range(len(df)):
                         for j in range(len(df.columns)):
                             celda = str(df.iat[i, j]).lower()
-                            for patron in patrones:
-                                if patron in celda:
-                                    # El valor numérico suele estar en la columna siguiente
-                                    try:
-                                        valor = df.iat[i, j+1]
-                                        valor = str(valor).replace(",", "").replace("$", "").strip()
-                                        total_stock = float(valor)
-                                    except:
-                                        pass
-                                    break
+                            if any(patron in celda for patron in patrones):
+                                try:
+                                    # TOMAR LA CELDA +2
+                                    valor = df.iat[i, j + 2]
+                                    valor_str = str(valor).replace(".", "").replace(",", ".")
+                                    total_stock = int(float(valor_str))
+                                except:
+                                    pass
+                                break
 
                     resumen.append([fecha_inventario, nombre_clinica, total_stock, ""])
 
@@ -950,17 +1031,67 @@ def procesar_informes_inventario():
                     print(f"❌ Error procesando {archivo}: {e}")
                     continue
 
-            # ---------------------------
-            # D) GUARDAR RESUMEN FINAL
-            # ---------------------------
+            # ===============================
+            # 4. Crear DataFrame final
+            # ===============================
             df_final = pd.DataFrame(resumen, columns=["fecha", "clinica", "inventario", "compra"])
 
-            nombre_salida = f"Resumen Inventario {datetime.now().strftime('%Y-%m-%d')}.xlsx"
-            ruta_salida = os.path.join(carpeta_busqueda, nombre_salida)
-            df_final.to_excel(ruta_salida, index=False)
+            # ===============================
+            # Crear carpeta destino personalizada
+            # ===============================
+            fecha_inv = resumen[0][0].replace("/", "-")
+            fecha_hoy = datetime.now().strftime("%d-%m-%Y")
+            nombre_carpeta_final = f"Stock {fecha_inv} {fecha_hoy}"
+            carpeta_destino = os.path.join(os.path.dirname(archivos_excel[0]), nombre_carpeta_final)
+            os.makedirs(carpeta_destino, exist_ok=True)
+            nombre_salida = f"Resumen Inventario {fecha_inv}.xlsx"
+            ruta_salida = os.path.join(carpeta_destino, nombre_salida)
 
+            # ======================================
+            # 5. Guardar con ESTILO
+            # ======================================
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+            from openpyxl.utils import get_column_letter
+
+            df_final.to_excel(ruta_salida, index=False)
+            wb = openpyxl.load_workbook(ruta_salida)
+            ws = wb.active
+
+            # Encabezado azul
+            header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True)
+
+            for col in range(1, ws.max_column + 1):
+                cell = ws.cell(row=1, column=col)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal="center")
+
+            # Bordes finos
+            thin = Side(border_style="thin", color="000000")
+            border = Border(top=thin, left=thin, right=thin, bottom=thin)
+
+            for row in ws.iter_rows():
+                for cell in row:
+                    cell.border = border
+
+            # Formato números
+            for row in range(2, ws.max_row + 1):
+                ws[f"C{row}"].number_format = "#,##0"
+
+            # Autoajustar columnas
+            for col in ws.columns:
+                max_len = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+                ws.column_dimensions[get_column_letter(col[0].column)].width = max_len + 2
+
+            # Filtros
+            ws.auto_filter.ref = f"A1:D{ws.max_row}"
+
+            wb.save(ruta_salida)
+            os.startfile(carpeta_busqueda)
             print(f"📁 Resumen generado: {ruta_salida}")
-            mostrar_toast("Resumen generado con éxito", tipo="success", titulo="Completado")
+            mostrar_toast(f"Resumen generado en {ruta_salida}", tipo="success", titulo="Completado")
 
         except Exception as e:
             print(f"❌ Error general: {e}")
@@ -970,6 +1101,7 @@ def procesar_informes_inventario():
 
     btn_procesar_informes.configure(state="disabled")
     threading.Thread(target=_proceso, daemon=True).start()
+
 
 
 def actualizar_info_inventario(nombre_archivo="", total_items=0):
@@ -984,7 +1116,7 @@ def actualizar_tabla_inventario():
 
 # FUNCIONES AUXILIARES ORIGINALES 
 
-def buscar_y_click(imagen, nombre, confianza=0.9, intentos=2, esperar=5):
+def buscar_y_click(imagen, nombre, confianza=0.9, intentos=3, esperar=5):
     for i in range(intentos):
         print(f"🔎 Buscando botón '{nombre}' (Intento {i+1}/{intentos})...")
         try:
@@ -992,7 +1124,7 @@ def buscar_y_click(imagen, nombre, confianza=0.9, intentos=2, esperar=5):
                 os.path.join(CARPETA_BOTONES, imagen), confidence=confianza
             )
             if ubicacion:
-                pyautogui.moveTo(ubicacion, duration=0.8)
+                pyautogui.moveTo(ubicacion, duration=0.2)
                 pyautogui.click()
                 print(f"✅ Botón '{nombre}' encontrado y clickeado.")
                 return True
@@ -1884,7 +2016,7 @@ def _on_descargar_informes():
 btn_descargar_informes = ctk.CTkButton(
     btn_frame_inventario,
     text="📥 Descargar Informes",
-    command=_on_descargar_informes,
+    command=pedir_fecha_informes,
     corner_radius=25,
     fg_color=ACCENT,
     hover_color=ACCENT_HOVER,
@@ -1915,7 +2047,67 @@ btn_procesar_informes = ctk.CTkButton(
     state="disabled",
 )
 btn_procesar_informes.pack(side="left", padx=12, pady=12)
+def seleccionar_fecha_descarga(root):
+    """Ventana popup para elegir si usar fecha de hoy o personalizada"""
+    global fecha_personalizada
 
+    ventana = Toplevel(root)
+    ventana.title("Seleccionar fecha")
+    ventana.geometry("320x180")
+    ventana.resizable(False, False)
+
+    Label(ventana, text="¿Qué fecha desea usar para los informes?",
+          font=("Arial", 11)).pack(pady=10)
+
+    def usar_hoy():
+        nonlocal ventana
+        fecha_personalizada = None
+        ventana.destroy()
+
+    def usar_personalizada():
+        ventana.destroy()
+        pedir_fecha_personalizada()
+
+    Button(ventana, text="Usar fecha de HOY", width=25,
+           command=usar_hoy, bg="#4CAF50", fg="white").pack(pady=5)
+
+    Button(ventana, text="Elegir FECHA personalizada", width=25,
+           command=usar_personalizada, bg="#2196F3", fg="white").pack(pady=5)
+
+    ventana.grab_set()
+    root.wait_window(ventana)
+
+
+def pedir_fecha_personalizada():
+    """Ventana para pedir una fecha exacta al usuario"""
+    global fecha_personalizada
+
+    top = Toplevel()
+    top.title("Elegir Fecha")
+    top.geometry("260x150")
+    top.resizable(False, False)
+
+    Label(top, text="Seleccione la fecha del informe:",
+          font=("Arial", 10)).pack(pady=10)
+
+    fecha_var = StringVar()
+
+    calendario = DateEntry(top, width=18, date_pattern="dd/mm/yyyy",
+                           textvariable=fecha_var)
+    calendario.pack(pady=5)
+
+    def guardar_fecha():
+        nonlocal top
+        global fecha_personalizada
+        fecha_personalizada = fecha_var.get()  # formato dd/mm/yyyy
+        print(f"📌 Fecha personalizada seleccionada: {fecha_personalizada}")
+        mostrar_toast(f"Fecha seleccionada: {fecha_personalizada}",
+                      tipo="info", titulo="Fecha personalizada")
+        top.destroy()
+
+    Button(top, text="Guardar fecha",
+           bg="#4CAF50", fg="white", width=20,
+           command=guardar_fecha).pack(pady=10)
 # Añadir hover simple
 btn_descargar_informes.bind("<Enter>", lambda e: simple_button_hover(btn_descargar_informes, True))
 btn_descargar_informes.bind("<Leave>", lambda e: simple_button_hover(btn_descargar_informes, False))
