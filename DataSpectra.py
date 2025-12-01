@@ -18,8 +18,10 @@ import glob
 import string
 import re
 from tkcalendar import DateEntry
-
-
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
+import json
 # === CONFIGURACIÓN ===
 CARPETA_BOTONES = "Buttons"
 URL_TECFOOD = "https://food.teknisa.com//df/#/df_entrada#dfe11000_lancamento_entrada"
@@ -388,34 +390,28 @@ NOMBRES_CLINICAS = {
 }
 def crear_carpeta_inventario(fecha_inventario=None):
     """
-    Crea la carpeta FINAL donde se guardarán:
-    - Los informes descargados
-    - El archivo unificado
-
-    Formato final:
-    Stock {fecha_inventario} {fecha_hoy}
+    Crea la carpeta FINAL donde se guardarán los informes.
+    Formato: Inventario {Fecha}
     """
-
-    # Ruta del escritorio
     escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
     if not os.path.isdir(escritorio):
         escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
-
-    # Convertimos fecha del inventario en formato ideal
-    if fecha_inventario:
-        fecha_inv_fmt = fecha_inventario.replace("/", "-")
+    
+    # Determinar la fecha del inventario
+    if fecha_personalizada:
+        # Si hay fecha personalizada, usarla
+        fecha_inv = fecha_personalizada.replace("/", "-")
     else:
-        fecha_inv_fmt = datetime.now().strftime("%d-%m-%Y")
-
-    fecha_hoy = datetime.now().strftime("%d-%m-%Y")
-
-    # Nombre final de la carpeta
-    nombre_carpeta = f"Stock {fecha_inv_fmt} {fecha_hoy}"
-
+        # Usar fecha de hoy
+        fecha_inv = datetime.now().strftime("%d-%m-%Y")
+    
+    # Nombre de carpeta simple
+    nombre_carpeta = f"Inventario {fecha_inv}"
+    
     carpeta_final = os.path.join(escritorio, nombre_carpeta)
-
     os.makedirs(carpeta_final, exist_ok=True)
-
+    
+    print(f"📁 Carpeta creada: {carpeta_final}")
     return carpeta_final
 
 
@@ -633,41 +629,43 @@ def _archivo_estable(ruta):
 
 
 def renombrar_y_mover_archivo(archivo_descargado, carpeta_destino, codigo_clinica, indice):
+    """
+    Renombra el archivo descargado y lo mueve DIRECTAMENTE a la carpeta final.
+    """
     try:
         if not archivo_descargado or not os.path.exists(archivo_descargado):
             print(f"❌ Archivo descargado no existe: {archivo_descargado}")
             return None
-
-        fecha = datetime.now().strftime("%Y-%m-%d")
-
-        # Nombre bonito según tabla
+        
+        # Formato de fecha simple
+        fecha_actual = datetime.now().strftime("%Y-%m-%d")
+        
+        # Nombre de la clínica
         nombre_clinica = NOMBRES_CLINICAS.get(codigo_clinica, codigo_clinica)
-
-        nombre_nuevo = f"Informe de la clínica {nombre_clinica} del día {fecha}.xlsx"
-
+        
+        # Nombre simple del archivo
+        nombre_nuevo = f"{nombre_clinica}.xlsx"
+        
         ruta_nueva = os.path.join(carpeta_destino, nombre_nuevo)
-
+        
+        # Si ya existe, agregar número
         if os.path.exists(ruta_nueva):
-            try:
-                os.remove(ruta_nueva)
-            except Exception as e:
-                print(f"⚠️ No se pudo reemplazar el archivo existente: {e}")
-
+            base, ext = os.path.splitext(nombre_nuevo)
+            contador = 1
+            while os.path.exists(os.path.join(carpeta_destino, f"{base}_{contador}{ext}")):
+                contador += 1
+            nombre_nuevo = f"{base}_{contador}{ext}"
+            ruta_nueva = os.path.join(carpeta_destino, nombre_nuevo)
+        
+        # Mover directamente a la carpeta final
         shutil.move(archivo_descargado, ruta_nueva)
-
-        print(f"✅ Archivo renombrado y movido: {nombre_nuevo}")
-
-        try:
-            mostrar_toast(f"Archivo movido: {nombre_nuevo}", tipo="success", titulo="Éxito")
-        except Exception:
-            pass
-
+        
+        print(f"✅ Archivo guardado: {nombre_nuevo}")
         return nombre_nuevo
-
+        
     except Exception as e:
-        print(f"❌ Error renombrando/moviendo archivo: {e}")
+        print(f"❌ Error moviendo archivo: {e}")
         return None
-
 def debug_descargas():
     """Función para debug: mostrar qué archivos hay en descargas"""
     carpeta_descargas = obtener_carpeta_descargas()
@@ -703,146 +701,323 @@ def debug_descargas():
 
 def pedir_fecha_informes():
     global fecha_personalizada
-
-    # ===== CREAR TOPLEVEL =====
+    
+    # ===== CREAR VENTANA MODAL CON SCROLL =====
     win = ctk.CTkToplevel(root)
     win.title("Seleccionar fecha para los informes")
-    win.geometry("480x420")
+    win.geometry("520x420")  # Un poco más alta
     win.resizable(False, False)
     win.configure(fg_color="#0F1724")
     win.attributes("-topmost", True)
     win.grab_set()
-
-    # ===== CENTRAR =====
+    
+    # ===== CENTRAR EN PANTALLA =====
     win.update_idletasks()
-    W, H = 480, 420
+    W, H = 520, 420
     x = (win.winfo_screenwidth() // 2) - (W // 2)
     y = (win.winfo_screenheight() // 2) - (H // 2)
     win.geometry(f"{W}x{H}+{x}+{y}")
-
-    # ===== FADE-IN =====
+    
+    # ===== ANIMACIÓN FADE-IN =====
     def fade_in(alpha=0.0):
         if alpha <= 1.0:
             win.attributes("-alpha", alpha)
-            win.after(8, lambda: fade_in(alpha + 0.05))
+            win.after(10, lambda: fade_in(alpha + 0.05))
     fade_in()
-
-    # ===== TITULO =====
+    
+    # ===== CONTENEDOR PRINCIPAL CON SCROLL =====
+    main_container = ctk.CTkScrollableFrame(
+        win, 
+        fg_color="transparent",
+        scrollbar_button_color="#4B5563",
+        scrollbar_button_hover_color="#6B7280"
+    )
+    main_container.pack(fill="both", expand=True, padx=20, pady=20)
+    
+    # Tarjeta principal
+    card = ctk.CTkFrame(main_container, fg_color="#1C1E23", corner_radius=20)
+    card.pack(fill="both", expand=True)
+    
+    # Contenedor interno para contenido fijo
+    content_frame = ctk.CTkFrame(card, fg_color="transparent")
+    content_frame.pack(fill="both", expand=True, padx=30, pady=25)
+    
+    # ===== ENCABEZADO =====
+    header_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+    header_frame.pack(fill="x", pady=(0, 15))
+    
+    # Icono e título
+    icon_label = ctk.CTkLabel(header_frame, text="📅", font=("Segoe UI Emoji", 32))
+    icon_label.pack(side="left", padx=(0, 15))
+    
+    title_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+    title_frame.pack(side="left", fill="both", expand=True)
+    
     ctk.CTkLabel(
-        win,
-        text="¿Qué fecha deseas usar para los informes?",
+        title_frame,
+        text="Seleccionar fecha de inventario",
         font=("Segoe UI", 20, "bold"),
         text_color="white"
-    ).pack(pady=(22, 6))
-
+    ).pack(anchor="w")
+    
     ctk.CTkLabel(
-        win,
-        text="Puedes elegir la fecha de hoy o seleccionar una personalizada.",
-        font=("Segoe UI", 14),
+        title_frame,
+        text="Elige la fecha para la cual deseas generar los informes",
+        font=("Segoe UI", 12),
         text_color="#AAB4C0"
-    ).pack(pady=(0, 15))
-
-    # ===== BOTONES PRINCIPALES =====
-    frame_botones = ctk.CTkFrame(win, fg_color="transparent")
-    frame_botones.pack(pady=10)
-
-    # Frame donde aparecerá la fecha personalizada
-    frame_fecha = ctk.CTkFrame(win, fg_color="transparent")
-    frame_fecha.pack(pady=10)
-
-    # ===== FUNCIÓN: USAR HOY =====
-    def usar_hoy():
-        globals()["fecha_personalizada"] = None
-        fade_out_and_close(win)
-        pedir_descarga()
-
-    # ===== FUNCIÓN: USAR PERSONALIZADA =====
-    def usar_personalizada():
-
-        # Borra contenido previo del área de fecha
-        for w in frame_fecha.winfo_children():
-            w.destroy()
-
-        # Texto
+    ).pack(anchor="w", pady=(2, 0))
+    
+    # ===== OPCIONES DE FECHA =====
+    options_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+    options_frame.pack(fill="both", expand=True, pady=10)
+    
+    # Separador
+    separator = ctk.CTkFrame(options_frame, fg_color="#2D3748", height=1)
+    separator.pack(fill="x", pady=(0, 20))
+    
+    # OPCIÓN 1: FECHA DE HOY
+    option1_frame = ctk.CTkFrame(options_frame, fg_color="#252833", corner_radius=12, height=70)
+    option1_frame.pack(fill="x", pady=(0, 12))
+    option1_frame.pack_propagate(False)
+    
+    def on_hover_enter(frame, is_enter=True):
+        frame.configure(fg_color="#2E313C" if is_enter else "#252833")
+    
+    option1_frame.bind("<Enter>", lambda e: on_hover_enter(option1_frame, True))
+    option1_frame.bind("<Leave>", lambda e: on_hover_enter(option1_frame, False))
+    
+    # Contenido opción 1
+    option1_content = ctk.CTkFrame(option1_frame, fg_color="transparent")
+    option1_content.pack(fill="both", expand=True, padx=20)
+    
+    option1_text_frame = ctk.CTkFrame(option1_content, fg_color="transparent")
+    option1_text_frame.pack(side="left", fill="both", expand=True)
+    
+    ctk.CTkLabel(
+        option1_text_frame,
+        text="📌 Usar fecha de HOY",
+        font=("Segoe UI", 15, "bold"),
+        text_color="white"
+    ).pack(anchor="w")
+    
+    fecha_hoy = datetime.now().strftime("%d/%m/%Y")
+    ctk.CTkLabel(
+        option1_text_frame,
+        text=fecha_hoy,
+        font=("Segoe UI", 13),
+        text_color="#4ADE80"
+    ).pack(anchor="w", pady=(5, 0))
+    
+    # OPCIÓN 2: FECHA PERSONALIZADA
+    option2_frame = ctk.CTkFrame(options_frame, fg_color="#252833", corner_radius=12, height=70)
+    option2_frame.pack(fill="x")
+    option2_frame.pack_propagate(False)
+    
+    option2_frame.bind("<Enter>", lambda e: on_hover_enter(option2_frame, True))
+    option2_frame.bind("<Leave>", lambda e: on_hover_enter(option2_frame, False))
+    
+    # Contenido opción 2
+    option2_content = ctk.CTkFrame(option2_frame, fg_color="transparent")
+    option2_content.pack(fill="both", expand=True, padx=20)
+    
+    option2_text_frame = ctk.CTkFrame(option2_content, fg_color="transparent")
+    option2_text_frame.pack(side="left", fill="both", expand=True)
+    
+    ctk.CTkLabel(
+        option2_text_frame,
+        text="🗓️ Seleccionar fecha personalizada",
+        font=("Segoe UI", 15, "bold"),
+        text_color="white"
+    ).pack(anchor="w")
+    
+    ctk.CTkLabel(
+        option2_text_frame,
+        text="Elige cualquier fecha del calendario",
+        font=("Segoe UI", 13),
+        text_color="#60A5FA"
+    ).pack(anchor="w", pady=(5, 0))
+    
+    # ===== ÁREA DE FECHA PERSONALIZADA (INICIALMENTE OCULTA) =====
+    custom_date_container = ctk.CTkFrame(content_frame, fg_color="transparent")
+    custom_date_container.pack(fill="x", pady=(20, 0))
+    
+    # Frame para el contenido de fecha personalizada
+    custom_date_frame = ctk.CTkFrame(custom_date_container, fg_color="#1F2937", corner_radius=12)
+    custom_date_frame.pack(fill="x", pady=(5, 0))
+    
+    # Inicialmente oculto
+    custom_date_frame.pack_forget()
+    
+    def mostrar_selector_fecha():
+        # Si ya está visible, no hacer nada
+        if custom_date_frame.winfo_ismapped():
+            return
+            
+        # Limpiar contenido previo
+        for widget in custom_date_frame.winfo_children():
+            widget.destroy()
+        
+        # Crear contenido de fecha personalizada
+        inner_frame = ctk.CTkFrame(custom_date_frame, fg_color="transparent")
+        inner_frame.pack(fill="both", expand=True, padx=25, pady=25)
+        
+        # Título
         ctk.CTkLabel(
-            frame_fecha,
-            text="Selecciona una fecha:",
-            text_color="white",
-            font=("Segoe UI", 16, "bold")
-        ).pack(pady=6)
-
-        # Selector de fecha
-        fecha_widget = DateEntry(
-            frame_fecha,
-            width=18,
-            background="#2C3E50",
-            foreground="white",
-            borderwidth=2,
-            date_pattern="dd-mm-yyyy"
-        )
-        fecha_widget.pack(pady=6)
-
-        # Guardar fecha
-        def guardar_fecha():
-            globals()["fecha_personalizada"] = fecha_widget.get()
-            fade_out_and_close(win)
-            pedir_descarga()
-
-        # Botón confirmar
-        ctk.CTkButton(
-            frame_fecha,
-            text="✔ Continuar con esta fecha",
-            fg_color="#3498DB",
-            hover_color="#5DADE2",
-            corner_radius=14,
+            inner_frame,
+            text="📆 Selecciona una fecha específica:",
             font=("Segoe UI", 16, "bold"),
-            height=45,
-            width=200,
-            command=guardar_fecha
-        ).pack(pady=12)
-
-    # ===== BOTÓN HOY =====
-    btn_hoy = ctk.CTkButton(
-        frame_botones,
-        text="Usar fecha HOY",
-        fg_color="#16A34A",
-        hover_color="#22C55E",
-        corner_radius=14,
-        font=("Segoe UI", 16, "bold"),
-        height=50,
-        width=180,
-        command=usar_hoy
-    )
-    btn_hoy.pack(side="left", padx=14)
-
-    # ===== BOTÓN PERSONALIZADA =====
-    btn_personalizada = ctk.CTkButton(
-        frame_botones,
-        text="Fecha PERSONALIZADA",
-        fg_color="#2563EB",
-        hover_color="#3B82F6",
-        corner_radius=14,
-        font=("Segoe UI", 16, "bold"),
-        height=50,
-        width=220,
-        command=usar_personalizada
-    )
-    btn_personalizada.pack(side="left", padx=14)
-
-    # ===== FADE OUT =====
+            text_color="white"
+        ).pack(anchor="w", pady=(0, 15))
+        
+        # Frame para calendario
+        calendar_frame = ctk.CTkFrame(inner_frame, fg_color="#111827", corner_radius=10)
+        calendar_frame.pack(fill="x", pady=(0, 20))
+        
+        # Widget de calendario con estilo mejorado y más grande
+        fecha_widget = DateEntry(
+            calendar_frame,
+            width=24,
+            height=8,
+            background="#111827",
+            foreground="white",
+            selectbackground="#3B82F6",
+            selectforeground="white",
+            normalbackground="#1F2937",
+            normalforeground="#D1D5DB",
+            weekendbackground="#1F2937",
+            weekendforeground="#9CA3AF",
+            headersbackground="#111827",
+            headersforeground="#60A5FA",
+            borderwidth=0,
+            relief="flat",
+            date_pattern="dd/mm/yyyy",
+            font=("Segoe UI", 11),
+            justify="center"
+        )
+        fecha_widget.pack(padx=15, pady=15)
+        
+        # Frame para botones
+        buttons_frame = ctk.CTkFrame(inner_frame, fg_color="transparent")
+        buttons_frame.pack(fill="x", pady=(10, 0))
+        
+        # Botón para confirmar fecha personalizada
+        def confirmar_fecha_personalizada():
+            selected_date = fecha_widget.get()
+            if selected_date:
+                globals()["fecha_personalizada"] = selected_date
+                mostrar_toast(f"Fecha seleccionada: {selected_date}", tipo="success", titulo="Fecha confirmada")
+                fade_out_and_close(win)
+                iniciar_descarga()
+            else:
+                mostrar_toast("Por favor selecciona una fecha", tipo="warning", titulo="Fecha requerida")
+        
+        # Botón para cancelar selección personalizada
+        def cancelar_personalizada():
+            ocultar_selector_fecha()
+        
+        ctk.CTkButton(
+            buttons_frame,
+            text="Confirmar fecha seleccionada",
+            fg_color="#3B82F6",
+            hover_color="#2563EB",
+            corner_radius=10,
+            font=("Segoe UI", 13, "bold"),
+            height=42,
+            command=confirmar_fecha_personalizada
+        ).pack(side="left", padx=(0, 10))
+        
+        ctk.CTkButton(
+            buttons_frame,
+            text="Cancelar",
+            fg_color="transparent",
+            hover_color="#374151",
+            border_width=1,
+            border_color="#4B5563",
+            text_color="#9CA3AF",
+            corner_radius=10,
+            font=("Segoe UI", 13),
+            height=42,
+            command=cancelar_personalizada
+        ).pack(side="left")
+        
+        # Mostrar con animación
+        custom_date_frame.pack(fill="x", pady=(5, 0))
+        
+        # Forzar actualización y scroll a la vista
+        main_container._parent_canvas.yview_moveto(1.0)
+        win.update_idletasks()
+    
+    def ocultar_selector_fecha():
+        custom_date_frame.pack_forget()
+        win.update_idletasks()
+    
+    # ===== FUNCIONES DE OPCIÓN =====
+    def usar_fecha_hoy():
+        globals()["fecha_personalizada"] = None
+        mostrar_toast(f"Usando fecha de hoy: {fecha_hoy}", tipo="info", titulo="Fecha de hoy")
+        fade_out_and_close(win)
+        iniciar_descarga()
+    
+    def usar_fecha_personalizada():
+        mostrar_selector_fecha()
+    
+    # ===== ASIGNAR EVENTOS DE CLIC =====
+    for widget in [option1_frame, option1_content, option1_text_frame]:
+        widget.bind("<Button-1>", lambda e: usar_fecha_hoy())
+    
+    for widget in [option2_frame, option2_content, option2_text_frame]:
+        widget.bind("<Button-1>", lambda e: usar_fecha_personalizada())
+    
+    # También hacer clicable el texto dentro de los frames
+    for label in option1_content.winfo_children():
+        label.bind("<Button-1>", lambda e: usar_fecha_hoy())
+    
+    for label in option2_content.winfo_children():
+        label.bind("<Button-1>", lambda e: usar_fecha_personalizada())
+    
+    # ===== ANIMACIÓN DE CIERRE =====
     def fade_out_and_close(toplevel, alpha=1.0):
         if alpha > 0:
             toplevel.attributes("-alpha", alpha)
-            toplevel.after(6, lambda: fade_out_and_close(toplevel, alpha - 0.08))
+            toplevel.after(8, lambda: fade_out_and_close(toplevel, alpha - 0.1))
         else:
             toplevel.destroy()
-
-    # ===== PROCESO REAL =====
-    def pedir_descarga():
+    
+    # ===== INICIAR DESCARGA =====
+    def iniciar_descarga():
         mostrar_pantalla("inventario")
         root.after(300, descargar_informes_inventario)
-
-
+    
+    # ===== BOTÓN DE CANCELAR GENERAL =====
+    cancel_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+    cancel_frame.pack(fill="x", pady=(20, 0))
+    
+    def cancelar():
+        mostrar_toast("Selección de fecha cancelada", tipo="info", titulo="Cancelado")
+        fade_out_and_close(win)
+    
+    cancel_btn = ctk.CTkButton(
+        cancel_frame,
+        text="Cancelar selección",
+        fg_color="transparent",
+        hover_color="#2D3748",
+        border_width=1,
+        border_color="#4B5563",
+        text_color="#9CA3AF",
+        corner_radius=10,
+        font=("Segoe UI", 12),
+        height=40,
+        command=cancelar
+    )
+    cancel_btn.pack(side="right")
+    
+    # ===== EFECTO DE FOCO INICIAL =====
+    def highlight_option(frame):
+        original_color = frame.cget("fg_color")
+        frame.configure(fg_color="#2E313C")
+        win.after(100, lambda: frame.configure(fg_color=original_color))
+    
+    win.after(200, lambda: highlight_option(option1_frame))
 def descargar_informes_inventario():
     print("🏁 Iniciando descarga de informes de inventario...")
     mostrar_toast("Iniciando descarga de informes...", tipo="info", titulo="Descarga")
@@ -852,13 +1027,13 @@ def descargar_informes_inventario():
             print("🔗 Abriendo sistema de inventario en Edge...")
             subprocess.Popen(["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", URL_RETIRADA])
             time.sleep(12)
-            debug_descargas()
-            # Crear carpeta específica para esta ejecución
-            carpeta_inventario = crear_carpeta_inventario()
-            print(f"📁 CARPETA CREADA EN: {carpeta_inventario}")
             
             # Limpiar descargas anteriores
             limpiar_carpeta_descargas()
+            
+            # Crear carpeta FINAL desde el inicio
+            carpeta_final = crear_carpeta_inventario()
+            print(f"📁 TODOS los archivos se guardarán en: {carpeta_final}")
             
             carpeta_descargas = obtener_carpeta_descargas()
             archivos_descargados = []
@@ -949,19 +1124,24 @@ def descargar_informes_inventario():
                 
                 # Esperar a que se complete la descarga
                 print("⏳ Esperando a que se complete la descarga...")
-                time.sleep(2)
+                time.sleep(3)
                 
                 # Buscar el archivo descargado
                 archivo_descargado = esperar_archivo_descargado(carpeta_descargas, tiempo_maximo=5)
                 
                 if archivo_descargado:
-                    # Renombrar y mover el archivo
-                    archivo_renombrado = renombrar_y_mover_archivo(archivo_descargado, carpeta_inventario, codigo_clinica, i)
+                    # Mover DIRECTAMENTE a la carpeta final
+                    archivo_renombrado = renombrar_y_mover_archivo(
+                        archivo_descargado, 
+                        carpeta_final,  # ¡Directo a la carpeta final!
+                        codigo_clinica, 
+                        i
+                    )
                     if archivo_renombrado:
                         archivos_descargados.append(archivo_renombrado)
-                        print(f"✅ ÉXITO: Archivo procesado para clínica {codigo_clinica}")
+                        print(f"✅ ÉXITO: Archivo guardado en carpeta final: {archivo_renombrado}")
                     else:
-                        print(f"❌ FALLO: No se pudo renombrar archivo para clínica {codigo_clinica}")
+                        print(f"❌ FALLO: No se pudo mover archivo para clínica {codigo_clinica}")
                 else:
                     print(f"❌ FALLO: No se descargó archivo para clínica {codigo_clinica}")
                 
@@ -982,23 +1162,25 @@ def descargar_informes_inventario():
             print(f"\n{'='*60}")
             print("🎯 RESUMEN DE DESCARGA")
             print(f"{'='*60}")
-            print(f"📁 Carpeta destino: {carpeta_inventario}")
+            print(f"📁 Carpeta final: {carpeta_final}")
             print(f"📊 Archivos descargados: {len(archivos_descargados)}/9")
             
             if archivos_descargados:
                 print("✅ Descarga completada exitosamente")
                 mostrar_toast(f"Descarga completada: {len(archivos_descargados)}/9 archivos", tipo="success", titulo="Éxito")
                 
-                # Guardar la ruta de la carpeta para el procesamiento
-                global carpeta_inventario_temporal
-                carpeta_inventario_temporal = carpeta_inventario
+                # Actualizar interfaz
+                root.after(0, lambda: actualizar_info_inventario(
+                    f"Carpeta: {os.path.basename(carpeta_final)}", 
+                    f"Archivos: {len(archivos_descargados)}/9"
+                ))
                 
-                # Actualizar interfaz con información
-                root.after(0, lambda: actualizar_info_inventario(f"Carpeta: {os.path.basename(carpeta_inventario)}", f"Archivos: {len(archivos_descargados)}/9"))
+                # Habilitar botón de procesar
+                root.after(0, lambda: btn_procesar_informes.configure(state="normal"))
                 
-                # Habilitar botón de procesar si hay archivos
-                if archivos_descargados:
-                    root.after(0, lambda: btn_procesar_informes.configure(state="normal"))
+                # Maximizar ventana
+                root.after(0, lambda: root.state('zoomed'))
+                root.after(0, lambda: root.deiconify())
             else:
                 print("❌ No se descargó ningún archivo")
                 mostrar_toast("No se descargaron archivos. Revisa el proceso.", tipo="warning", titulo="Advertencia")
@@ -1007,113 +1189,70 @@ def descargar_informes_inventario():
             print(f"❌ Error en descarga de informes: {e}")
             mostrar_toast(f"Error en descarga de informes:\n{e}", tipo="error", titulo="Error")
         finally:
-            # Reactivar botón
+            # Reactivar botón de descargar
             root.after(0, lambda: btn_descargar_informes.configure(state="normal"))
             print("🔄 Botón 'Descargar Informes' REACTIVADO")
     
-    root.after(0, lambda: root.state('zoomed'))
     btn_descargar_informes.configure(state="disabled")
     threading.Thread(target=_proceso_descarga, daemon=True).start()
 
 def procesar_informes_inventario():
+    """
+    Procesa los informes ya descargados en la carpeta final
+    y genera un archivo resumen.
+    """
     print("🔄 Procesando informes descargados...")
-    mostrar_toast("Procesando informes...", tipo="info", titulo="Procesamiento")
-
+    mostrar_toast("Generando resumen...", tipo="info", titulo="Procesamiento")
+    
     def _proceso():
         try:
-            # ===========================
-            # 1) Carpeta temporal (descargas ya movidas)
-            # ===========================
-            if 'carpeta_inventario_temporal' in globals() and os.path.exists(carpeta_inventario_temporal):
-                carpeta_temporal = carpeta_inventario_temporal
-            else:
-                escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
-                if not os.path.isdir(escritorio):
-                    escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
-
-                carpetas = []
-                for item in os.listdir(escritorio):
-                    ruta = os.path.join(escritorio, item)
-                    if os.path.isdir(ruta) and item.startswith("Informes Inventario de stock"):
-                        carpetas.append((ruta, os.path.getmtime(ruta)))
-
-                carpetas.sort(key=lambda x: x[1], reverse=True)
-                carpeta_temporal = carpetas[0][0] if carpetas else escritorio
-
-            # ===========================
-            # 2) Encontrar archivos descargados
-            # ===========================
+            # Buscar la carpeta más reciente en el escritorio
+            escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
+            if not os.path.isdir(escritorio):
+                escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
+            
+            # Buscar carpetas que comiencen con "Inventario"
+            carpetas_inventario = []
+            for item in os.listdir(escritorio):
+                ruta = os.path.join(escritorio, item)
+                if os.path.isdir(ruta) and item.startswith("Inventario"):
+                    carpetas_inventario.append((ruta, os.path.getmtime(ruta)))
+            
+            if not carpetas_inventario:
+                mostrar_toast("No se encontró carpeta de inventario", tipo="warning", titulo="Advertencia")
+                return
+            
+            # Usar la carpeta más reciente
+            carpetas_inventario.sort(key=lambda x: x[1], reverse=True)
+            carpeta_final = carpetas_inventario[0][0]
+            print(f"📁 Procesando carpeta: {carpeta_final}")
+            
+            # Encontrar archivos Excel en la carpeta
             archivos_excel = []
-            for archivo in os.listdir(carpeta_temporal):
-                if archivo.startswith("Informe de la clínica") and archivo.endswith(".xlsx"):
-                    archivos_excel.append(os.path.join(carpeta_temporal, archivo))
-
+            for archivo in os.listdir(carpeta_final):
+                if archivo.endswith(".xlsx") and not archivo.startswith("Resumen"):
+                    archivos_excel.append(os.path.join(carpeta_final, archivo))
+            
             if not archivos_excel:
                 mostrar_toast("No hay informes para procesar", tipo="warning", titulo="Advertencia")
                 return
-
+            
+            # Extraer la fecha del nombre de la carpeta
+            nombre_carpeta = os.path.basename(carpeta_final)
+            fecha_match = re.search(r'(\d{2}-\d{2}-\d{4})', nombre_carpeta)
+            fecha_inventario = fecha_match.group(1) if fecha_match else datetime.now().strftime("%d-%m-%Y")
+            
+            # Procesar cada archivo
             resumen = []
-            fecha_personalizada_global = globals().get("fecha_personalizada", None)
-
-            def _normalizar_fecha_input(fecha_raw):
-                """Acepta DDMMYYYY, DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD y devuelve DD-MM-YYYY"""
-                if not fecha_raw:
-                    return None
-                f = str(fecha_raw).strip()
-                # formato DDMMYYYY -> insertar guiones
-                if re.fullmatch(r"\d{8}", f):
-                    return f[0:2] + "-" + f[2:4] + "-" + f[4:8]
-                # dd/mm/yyyy o dd-mm-yyyy
-                m = re.match(r"(\d{2})[\/\-](\d{2})[\/\-](\d{4})", f)
-                if m:
-                    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
-                # yyyy-mm-dd
-                m2 = re.match(r"(\d{4})[\/\-](\d{2})[\/\-](\d{2})", f)
-                if m2:
-                    return f"{m2.group(3)}-{m2.group(2)}-{m2.group(1)}"
-                return f  # devolver como venga si no coincide
-
-            fecha_inventario_real = None
-            if fecha_personalizada_global:
-                fecha_inventario_real = _normalizar_fecha_input(fecha_personalizada_global)
-
-            # Si no hay fecha personalizada, extraerla del primer archivo
-            if not fecha_inventario_real:
-                # intentar extraer del primer excel
-                primer_archivo = archivos_excel[0]
-                try:
-                    df_temp = pd.read_excel(primer_archivo, header=None)
-                    for fila in df_temp.values:
-                        fila_str = " ".join(map(str, fila))
-                        if "Fecha del Inventario" in fila_str:
-                            match = re.search(r"(\d{2}[\/\-]\d{2}[\/\-]\d{4})", fila_str)
-                            if match:
-                                # normalizamos a DD-MM-YYYY
-                                fecha_inventario_real = _normalizar_fecha_input(match.group(1))
-                                break
-                except Exception:
-                    fecha_inventario_real = None
-
-            if not fecha_inventario_real:
-                fecha_inventario_real = datetime.now().strftime("%d-%m-%Y")
-
-            # ===========================
-            # 4) Procesar archivos y extraer totales
-            # ===========================
-            patrones = ["total del stock", "valor total del stock", "total stock", "stock total"]
-
             for archivo in archivos_excel:
                 try:
                     df = pd.read_excel(archivo, header=None)
-
-                    # Extraer nombre de clínica desde el nombre del archivo
-                    nombre_archivo = os.path.basename(archivo)
-                    m = re.search(r"Informe de la clínica (.+?) del", nombre_archivo)
-                    nombre_clinica = m.group(1).strip() if m else "Desconocida"
-
+                    nombre_clinica = os.path.basename(archivo).replace(".xlsx", "")
+                    
+                    # Buscar total del stock (lógica existente)
                     total_stock = 0
-                    encontrado = False
-
+                    patrones = ["total del stock", "valor total del stock", "total stock", "stock total"]
+                    
                     for i in range(len(df)):
                         for j in range(len(df.columns)):
                             try:
@@ -1123,115 +1262,80 @@ def procesar_informes_inventario():
                             if any(p in celda for p in patrones):
                                 try:
                                     valor_bruto = df.iat[i, j + 2]
-                                    try:
-                                        valor_float = float(str(valor_bruto).replace(",", "."))
-                                    except:
-                                        valor_float = 0
+                                    valor_float = float(str(valor_bruto).replace(",", "."))
                                     total_stock = int(valor_float)
-
-                                except Exception:
+                                except:
                                     total_stock = 0
-
-                                encontrado = True
                                 break
-
-                    resumen.append([fecha_inventario_real, nombre_clinica, total_stock, ""])
-
+                    
+                    resumen.append([fecha_inventario, nombre_clinica, total_stock, ""])
+                    
                 except Exception as e:
                     print(f"❌ Error procesando {archivo}: {e}")
                     continue
-                
-            fecha_hoy = datetime.now().strftime("%d-%m-%Y")
-            fecha_inv_fmt = fecha_inventario_real  # ya normalizada como DD-MM-YYYY
-
-            escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
-            if not os.path.isdir(escritorio):
-                escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
-
-            nombre_carpeta_final = f"Stock {fecha_inv_fmt} {fecha_hoy}"
-            carpeta_final = os.path.join(escritorio, nombre_carpeta_final)
-
-            # Si la carpeta ya existe, no crear dentro de otra (asegurar ruta directa)
-            if not os.path.exists(carpeta_final):
-                os.makedirs(carpeta_final, exist_ok=True)
-
-            # ===========================
-            # 6) Mover archivos a la carpeta final (evitar sobreescrituras)
-            # ===========================
-            for archivo in archivos_excel:
-                dst = os.path.join(carpeta_final, os.path.basename(archivo))
-                # si existe, renombrar con sufijo _1, _2...
-                if os.path.exists(dst):
-                    base, ext = os.path.splitext(dst)
-                    contador = 1
-                    nuevo = f"{base}_{contador}{ext}"
-                    while os.path.exists(nuevo):
-                        contador += 1
-                        nuevo = f"{base}_{contador}{ext}"
-                    dst = nuevo
-                shutil.move(archivo, dst)
-
-            # ===========================
-            # 7) Crear DataFrame final y guardarlo en carpeta_final
-            # ===========================
+            
+            # Crear DataFrame y guardar resumen
             df_final = pd.DataFrame(resumen, columns=["fecha", "clinica", "inventario", "compra"])
-
-            nombre_salida = f"Resumen Inventario {fecha_inv_fmt}.xlsx"
-            ruta_salida = os.path.join(carpeta_final, nombre_salida)
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-            from openpyxl.utils import get_column_letter
-
-            df_final.to_excel(ruta_salida, index=False)
-            wb = openpyxl.load_workbook(ruta_salida)
+            
+            # Usar 'ruta_resumen' no 'ruta_salida'
+            nombre_resumen = f"Resumen Inventario {fecha_inventario}.xlsx"
+            ruta_resumen = os.path.join(carpeta_final, nombre_resumen)  # ¡Aquí se define ruta_resumen!
+            
+            # Guardar con formato
+            df_final.to_excel(ruta_resumen, index=False)
+            
+            # Aplicar formato al Excel
+            wb = openpyxl.load_workbook(ruta_resumen)  # Usar ruta_resumen
             ws = wb.active
-
+            
+            # Formato del encabezado
             header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
             header_font = Font(color="FFFFFF", bold=True)
-
+            
             for col in range(1, ws.max_column + 1):
                 c = ws.cell(row=1, column=col)
                 c.fill = header_fill
                 c.font = header_font
                 c.alignment = Alignment(horizontal="center")
-
+            
+            # Bordes para todas las celdas
             thin = Side(border_style="thin", color="000000")
             border = Border(top=thin, left=thin, right=thin, bottom=thin)
-
+            
             for row in ws.iter_rows():
                 for cell in row:
                     cell.border = border
-
-            # quitar decimales del inventario (mostrar como entero)
+            
+            # Formato de moneda para la columna de inventario
             for row in range(2, ws.max_row + 1):
                 ws[f"C{row}"].number_format = '"$"#,##0'
-
-
-            # autoajuste columnas
+            
+            # Autoajuste de columnas
             for col in ws.columns:
                 max_len = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
                 ws.column_dimensions[get_column_letter(col[0].column)].width = max_len + 2
-
+            
+            # Filtros automáticos
             ws.auto_filter.ref = f"A1:D{ws.max_row}"
-            wb.save(ruta_salida)
-
-            # ===========================
-            # 8) Abrir explorador en la carpeta final
-            # ===========================
+            
+            # Guardar cambios
+            wb.save(ruta_resumen)  # Usar ruta_resumen
+            
+            print(f"📁 Resumen generado: {ruta_resumen}")
+            mostrar_toast(f"Resumen generado en la carpeta", tipo="success", titulo="Completado")
+            
+            # Abrir la carpeta
             try:
                 os.startfile(carpeta_final)
-            except Exception:
+            except:
                 pass
-
-            print(f"📁 Resumen generado: {ruta_salida}")
-            mostrar_toast(f"Resumen generado en {ruta_salida}", tipo="success", titulo="Completado")
-
+            
         except Exception as e:
             print(f"❌ Error general: {e}")
-            mostrar_toast("Error procesando inventario", tipo="error", titulo="Error")
+            mostrar_toast(f"Error procesando inventario: {e}", tipo="error", titulo="Error")
         finally:
             root.after(0, lambda: btn_procesar_informes.configure(state="normal"))
-
+    
     btn_procesar_informes.configure(state="disabled")
     threading.Thread(target=_proceso, daemon=True).start()
 
