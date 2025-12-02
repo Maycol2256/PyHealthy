@@ -389,31 +389,42 @@ NOMBRES_CLINICAS = {
     "0003": "ASOCAÑA CALI"
 }
 def crear_carpeta_inventario(fecha_inventario=None):
-    """
-    Crea la carpeta FINAL donde se guardarán los informes.
-    Formato: Inventario {Fecha}
-    """
     escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
     if not os.path.isdir(escritorio):
         escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
     
     # Determinar la fecha del inventario
     if fecha_personalizada:
-        # Si hay fecha personalizada, usarla
         fecha_inv = fecha_personalizada.replace("/", "-")
     else:
-        # Usar fecha de hoy
         fecha_inv = datetime.now().strftime("%d-%m-%Y")
     
-    # Nombre de carpeta simple
-    nombre_carpeta = f"Inventario {fecha_inv}"
+    # Nombre base de carpeta
+    nombre_base = f"Inventario {fecha_inv}"
+    fecha_hoy = datetime.now().strftime("%H-%M_%d-%m-%Y")
     
-    carpeta_final = os.path.join(escritorio, nombre_carpeta)
-    os.makedirs(carpeta_final, exist_ok=True)
+    # Verificar si ya existe la carpeta base
+    carpeta_base = os.path.join(escritorio, nombre_base)
     
-    print(f"📁 Carpeta creada: {carpeta_final}")
+    if os.path.exists(carpeta_base):
+        # Si existe, crear una con sufijo
+        nombre_carpeta = f"{nombre_base} Generado a las {fecha_hoy}"
+        carpeta_final = os.path.join(escritorio, nombre_carpeta)
+        os.makedirs(carpeta_final, exist_ok=True)
+        print(f"📁 Carpeta DUPLICADA - Nueva creada: {nombre_carpeta}")
+    else:
+        # Si no existe, crear la carpeta base
+        nombre_carpeta = nombre_base
+        carpeta_final = carpeta_base
+        os.makedirs(carpeta_final, exist_ok=True)
+        print(f"📁 Carpeta NUEVA creada: {nombre_carpeta}")
+    
+    # Guardar referencia global de carpeta actual
+    global carpeta_inventario_actual
+    carpeta_inventario_actual = carpeta_final
+    
+    print(f"📁 Ruta completa: {carpeta_final}")
     return carpeta_final
-
 
 def obtener_archivo_mas_reciente(carpeta):
     archivos = []
@@ -705,7 +716,7 @@ def pedir_fecha_informes():
     # ===== CREAR VENTANA MODAL CON SCROLL =====
     win = ctk.CTkToplevel(root)
     win.title("Seleccionar fecha para los informes")
-    win.geometry("520x420")  # Un poco más alta
+    win.geometry("520x420")
     win.resizable(False, False)
     win.configure(fg_color="#0F1724")
     win.attributes("-topmost", True)
@@ -769,19 +780,18 @@ def pedir_fecha_informes():
     
     # ===== OPCIONES DE FECHA =====
     options_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-    options_frame.pack(fill="both", expand=True, pady=10)
+    options_frame.pack(fill="x", pady=(20, 0))
     
-    # Separador
-    separator = ctk.CTkFrame(options_frame, fg_color="#2D3748", height=1)
-    separator.pack(fill="x", pady=(0, 20))
+    def on_hover_enter(frame, is_hovering):
+        if is_hovering:
+            frame.configure(fg_color="#2E313C")
+        else:
+            frame.configure(fg_color="#252833")
     
-    # OPCIÓN 1: FECHA DE HOY
+    # OPCIÓN 1: FECHA ACTUAL
     option1_frame = ctk.CTkFrame(options_frame, fg_color="#252833", corner_radius=12, height=70)
-    option1_frame.pack(fill="x", pady=(0, 12))
+    option1_frame.pack(fill="x", pady=(0, 10))
     option1_frame.pack_propagate(False)
-    
-    def on_hover_enter(frame, is_enter=True):
-        frame.configure(fg_color="#2E313C" if is_enter else "#252833")
     
     option1_frame.bind("<Enter>", lambda e: on_hover_enter(option1_frame, True))
     option1_frame.bind("<Leave>", lambda e: on_hover_enter(option1_frame, False))
@@ -795,18 +805,29 @@ def pedir_fecha_informes():
     
     ctk.CTkLabel(
         option1_text_frame,
-        text="📌 Usar fecha de HOY",
+        text="📆 Usar fecha actual",
         font=("Segoe UI", 15, "bold"),
         text_color="white"
     ).pack(anchor="w")
     
-    fecha_hoy = datetime.now().strftime("%d/%m/%Y")
     ctk.CTkLabel(
         option1_text_frame,
-        text=fecha_hoy,
+        text=f"Hoy: {datetime.now().strftime('%d/%m/%Y')}",
         font=("Segoe UI", 13),
-        text_color="#4ADE80"
+        text_color="#60A5FA"
     ).pack(anchor="w", pady=(5, 0))
+    
+    # Botón de selección para opción 1
+    option1_btn = ctk.CTkButton(
+        option1_content,
+        text="Seleccionar",
+        width=100,
+        corner_radius=8,
+        fg_color="#3B82F6",
+        hover_color="#2563EB",
+        font=("Segoe UI", 11, "bold")
+    )
+    option1_btn.pack(side="right", padx=(10, 0))
     
     # OPCIÓN 2: FECHA PERSONALIZADA
     option2_frame = ctk.CTkFrame(options_frame, fg_color="#252833", corner_radius=12, height=70)
@@ -836,6 +857,18 @@ def pedir_fecha_informes():
         font=("Segoe UI", 13),
         text_color="#60A5FA"
     ).pack(anchor="w", pady=(5, 0))
+    
+    # Botón de selección para opción 2
+    option2_btn = ctk.CTkButton(
+        option2_content,
+        text="Seleccionar",
+        width=100,
+        corner_radius=8,
+        fg_color="#3B82F6",
+        hover_color="#2563EB",
+        font=("Segoe UI", 11, "bold")
+    )
+    option2_btn.pack(side="right", padx=(10, 0))
     
     # ===== ÁREA DE FECHA PERSONALIZADA (INICIALMENTE OCULTA) =====
     custom_date_container = ctk.CTkFrame(content_frame, fg_color="transparent")
@@ -951,29 +984,16 @@ def pedir_fecha_informes():
         custom_date_frame.pack_forget()
         win.update_idletasks()
     
-    # ===== FUNCIONES DE OPCIÓN =====
-    def usar_fecha_hoy():
+    # ===== FUNCIONES PARA OPCIONES =====
+    def usar_fecha_actual():
         globals()["fecha_personalizada"] = None
-        mostrar_toast(f"Usando fecha de hoy: {fecha_hoy}", tipo="info", titulo="Fecha de hoy")
+        mostrar_toast(f"Usando fecha actual: {datetime.now().strftime('%d/%m/%Y')}", tipo="success", titulo="Fecha actual")
         fade_out_and_close(win)
         iniciar_descarga()
     
-    def usar_fecha_personalizada():
-        mostrar_selector_fecha()
-    
-    # ===== ASIGNAR EVENTOS DE CLIC =====
-    for widget in [option1_frame, option1_content, option1_text_frame]:
-        widget.bind("<Button-1>", lambda e: usar_fecha_hoy())
-    
-    for widget in [option2_frame, option2_content, option2_text_frame]:
-        widget.bind("<Button-1>", lambda e: usar_fecha_personalizada())
-    
-    # También hacer clicable el texto dentro de los frames
-    for label in option1_content.winfo_children():
-        label.bind("<Button-1>", lambda e: usar_fecha_hoy())
-    
-    for label in option2_content.winfo_children():
-        label.bind("<Button-1>", lambda e: usar_fecha_personalizada())
+    # Asignar funciones a los botones
+    option1_btn.configure(command=usar_fecha_actual)
+    option2_btn.configure(command=mostrar_selector_fecha)
     
     # ===== ANIMACIÓN DE CIERRE =====
     def fade_out_and_close(toplevel, alpha=1.0):
@@ -1015,10 +1035,8 @@ def pedir_fecha_informes():
     def highlight_option(frame):
         original_color = frame.cget("fg_color")
         frame.configure(fg_color="#2E313C")
-        win.after(100, lambda: frame.configure(fg_color=original_color))
-    
-    win.after(200, lambda: highlight_option(option1_frame))
-def descargar_informes_inventario():
+        win.after(200, lambda: highlight_option(option2_frame))
+
     print("🏁 Iniciando descarga de informes de inventario...")
     mostrar_toast("Iniciando descarga de informes...", tipo="info", titulo="Descarga")
     
@@ -1322,7 +1340,7 @@ def procesar_informes_inventario():
             wb.save(ruta_resumen)  # Usar ruta_resumen
             
             print(f"📁 Resumen generado: {ruta_resumen}")
-            mostrar_toast(f"Resumen generado en la carpeta", tipo="success", titulo="Completado")
+            mostrar_toast(f"Resumen generado en la carpeta {ruta_resumen}", tipo="success", titulo="Completado")
             
             # Abrir la carpeta
             try:
@@ -1619,7 +1637,7 @@ def iniciar_proceso():
         # Selección de clínica
         try:
             time.sleep(3)
-            pyautogui.typewrite(codigo_clinica, interval=0.1)
+            pyautogui.typewrite(codigo_clinica, interval=0.2)
             time.sleep(2)
             x, y = pyautogui.position()
             pyautogui.moveTo(x, y + 50, duration=0.5)
@@ -2284,67 +2302,6 @@ btn_procesar_informes = ctk.CTkButton(
     state="disabled",
 )
 btn_procesar_informes.pack(side="left", padx=12, pady=12)
-def seleccionar_fecha_descarga(root):
-    """Ventana popup para elegir si usar fecha de hoy o personalizada"""
-    global fecha_personalizada
-
-    ventana = Toplevel(root)
-    ventana.title("Seleccionar fecha")
-    ventana.geometry("320x180")
-    ventana.resizable(False, False)
-
-    Label(ventana, text="¿Qué fecha desea usar para los informes?",
-          font=("Arial", 11)).pack(pady=10)
-
-    def usar_hoy():
-        nonlocal ventana
-        fecha_personalizada = None
-        ventana.destroy()
-
-    def usar_personalizada():
-        ventana.destroy()
-        pedir_fecha_personalizada()
-
-    Button(ventana, text="Usar fecha de HOY", width=25,
-           command=usar_hoy, bg="#4CAF50", fg="white").pack(pady=5)
-
-    Button(ventana, text="Elegir FECHA personalizada", width=25,
-           command=usar_personalizada, bg="#2196F3", fg="white").pack(pady=5)
-
-    ventana.grab_set()
-    root.wait_window(ventana)
-
-
-def pedir_fecha_personalizada():
-    """Ventana para pedir una fecha exacta al usuario"""
-    global fecha_personalizada
-
-    top = Toplevel()
-    top.title("Elegir Fecha")
-    top.geometry("260x150")
-    top.resizable(False, False)
-
-    Label(top, text="Seleccione la fecha del informe:",
-          font=("Arial", 10)).pack(pady=10)
-
-    fecha_var = StringVar()
-
-    calendario = DateEntry(top, width=18, date_pattern="dd/mm/yyyy",
-                           textvariable=fecha_var)
-    calendario.pack(pady=5)
-
-    def guardar_fecha():
-        nonlocal top
-        global fecha_personalizada
-        fecha_personalizada = fecha_var.get()  # formato dd/mm/yyyy
-        print(f"📌 Fecha personalizada seleccionada: {fecha_personalizada}")
-        mostrar_toast(f"Fecha seleccionada: {fecha_personalizada}",
-                      tipo="info", titulo="Fecha personalizada")
-        top.destroy()
-
-    Button(top, text="Guardar fecha",
-           bg="#4CAF50", fg="white", width=20,
-           command=guardar_fecha).pack(pady=10)
 # Añadir hover simple
 btn_descargar_informes.bind("<Enter>", lambda e: simple_button_hover(btn_descargar_informes, True))
 btn_descargar_informes.bind("<Leave>", lambda e: simple_button_hover(btn_descargar_informes, False))
